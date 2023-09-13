@@ -1,0 +1,694 @@
+---
+title: "Tomales Bay herons and egrets"
+output: word_document
+date: "`r Sys.Date()`"
+---
+
+
+```{r setup, echo = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.width=10, fig.height=6, fig.align = "left") 
+```
+
+
+```{r}
+
+
+library(tidyverse)
+library(cowplot)
+library(RColorBrewer)
+library(here)
+library(birdnames)
+
+
+custom_bird_list <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/my_R_general/birdnames_support/data/custom_bird_list")
+
+options(scipen = 999)
+
+```
+
+## Monitoring birds on Tomales Bay
+
+
+Monitoring species populations provides critical information to identify imperiled species, evaluate current or past management, prioritize new conservation measures.  
+
+Beginning around 1990, Audubon Canyon Ranch initiated three parallel monitoring projects to measure populations of three groups of waterbirds that use Tomales Bay. Waterbirds birds  are closely associated with water or wetlands for most of their life histories. Within this broad group, we can further split species based on behaviors, preferred habitats, and seasonal differences in when they are at Tomales Bay.  
+
+ * During the winter, thousands of shorebirds (e.g., sandpipers, plovers, godwits) migrate south to use the tidal wetlands and mudflats on the bay.   
+ * Also during the winter other species of waterbirds migrate to use the open water habitats on the bay (e.g., loons, grebes, cormorants, waterfowl).   
+ * Herons and egrets live at Tomales Bay year-round, but they are easiest to count during the spring and summer when they nest in colonies along the bay shore.    
+
+Because of these groupings, we use slightly different data collection and analysis methods, so in this report we’ll continue to see results split up into these three groups. 
+
+The data from these monitoring programs was recently analyzed and submitted for publication in three separate papers:
+
+Warnock, N., Jennings, S., Kelly, J.P., Condeso, T.E. and Lumpkin, D., 2021. Declining wintering shorebird populations at a temperate estuary in California: A 30-year perspective. The Condor, 123(1), p.duaa060. https://academic.oup.com/condor/article/123/1/duaa060/6132586
+
+Jennings, S., Warnock, N., Kelly, J.P., Condeso, T.E. and Lumpkin, D., Burns, G. and Wechsberg, B. In review. Status and Trends of Breeding Ardeidae in the San Francisco Bay Region
+
+Warnock, N., Jennings, S., Kelly, J.P., Condeso, T.E., Lumpkin, D., Baty, T. In prep. Decadal trends of (wintering) waterbirds at a coastal California site – a 30-year perspective. 
+
+
+Here, we provide an update to the results of these papers, showing the most recent years of data. The numbers we report here are slightly different than those in the above listed papers because of the additional data and we used simpler analysis. Specifically, within each of the three large waterbird groups, here we use the same model for all species rather than selecting a best model for each species. We generally fitted the most complex model (most predictor variables) from each paper, except for shorebirds where we used fewer predictor variables than the published analysis. See the published papers for more detail on the analysis methods.
+
+
+## Overall waterbird trends and general conclusions  
+
+```{r}
+hep_preds <- readRDS(here("data/HEP_predictions"))
+sbird_preds <- readRDS(here("data/sbird_preds"))
+wbird_preds <- readRDS(here("data/wbird_preds"))
+
+
+combined_preds <- bind_rows(hep_preds %>%
+                              filter(subregion == "TBAY") %>%
+                              rename("alpha.code" = species,
+                                     "abundance" = tot.nests) %>% 
+                              mutate(alpha.code = ifelse(alpha.code == "All", "All.hep", alpha.code),
+                                     common.name = ifelse(alpha.code == "All.hep", "Large herons and egrets", translate_bird_names(alpha.code, "alpha.code", "common.name")),
+                                     common.name = ifelse(alpha.code == "DCCO", paste("Breeding", common.name), common.name),
+                                     waterbird.group = ifelse(alpha.code == "DCCO", common.name, "Large herons and egrets")),
+                            sbird_preds %>% 
+                              rename("estimate" = predicted,
+                                     "abundance" = p75.total.sbirds) %>% 
+                              mutate(alpha.code = ifelse(alpha.code == "All", "All.sbird", alpha.code),
+                                     common.name = case_when(alpha.code == "All.sbird" ~ "All shorebirds",
+                                                             alpha.code == "DOSP" ~ "Dowitcher spp.",
+                                                             alpha.code == "YELL" ~ "Yellowlegs spp.",
+                                                             TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name")),
+                                     waterbird.group = "Shorebirds"),
+                            wbird_preds %>%
+                              rename("year" = study.year,
+                                     "abundance" = p75.abund) %>% 
+                              mutate(alpha.code = ifelse(alpha.code == "ALL", "All.wbird", alpha.code),
+                                     common.name = case_when(alpha.code == "All.wbird" ~ "All open water birds", 
+                                                             alpha.code == "SCAUP" ~ "Scaup spp.",
+                                                             TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name")),
+                                     waterbird.group = "Open water birds")
+                            ) %>% 
+  select(year, waterbird.group, alpha.code, common.name, abundance, estimate, lci, uci) %>% 
+  group_by(common.name) %>% 
+  mutate(upper.y = 1.1 * max(uci, na.rm = TRUE)) %>% 
+  ungroup()
+```
+  
+  
+```{r}
+
+#' trend_plotter
+#' 
+#' @description
+#' plot estimated trend line for 1 or more species. Will facet_wrap if more than 1 species. Can optionally include raw data
+#'
+#' @param zspp character string for 4-letted species codes to plot
+#' @param include.raw TRUE (default) to include points for raw data
+#'
+#' @return
+#' @export
+#'
+#' @examples
+trend_plotter <- function(zspp, include.raw = TRUE) {
+  
+zpred <- filter(combined_preds, alpha.code %in% zspp)
+  
+#ymax = ifelse(max(zpred$abundance) > max(zpred$uci), max(zpred$abundance), max(zpred$uci))
+
+zplot <- zpred %>% 
+  ggplot(aes(x = year, y = estimate)) +
+  geom_line() +
+  geom_ribbon(aes(ymin=lci,ymax=uci),alpha=0.3) +
+  theme_bw() +
+  scale_y_continuous(breaks = scales::pretty_breaks(8), limits = c(0, NA)) +
+  expand_limits(x = 1990) +
+  facet_wrap(~common.name, scales = "free_y") +
+  xlab("Year") +
+  ylab("Estimated mean abundance")
+
+
+if(include.raw == TRUE) {
+zplot <- zplot   +
+  geom_point(aes(x = year, y = abundance))
+}
+zpath = as.character(here(paste("figures/", paste(zspp, collapse = "_"), "_trend.png", sep = "")))
+
+ggsave(zpath, zplot, dpi = 300, width = 8)
+
+return(zplot)
+
+
+}
+
+
+```  
+  
+  
+We'll start out looking at long term trends for each of the three broad categories of waterbirds. In the figures below, the black line represents the estimated average abundance, and the gray area represents an estimate of error (95% confidence interval) for this estimated mean. We see distinctly different trajectories of abundance over the last ~30 years for each group of birds. For waterbirds that mostly use open water habitats, there were about 22,000 individuals on the bay in 1992, that number rose to a little under 29,000 around 2005, but has since dropped to around 19,000. Shorebird species declined steadily from about 15,000 in 1989 to just over 4,000 today. The Giacomini restoration project was associated with an increase of about 2,500 birds, but this increase was not enough to reverse the overall negative trend. For Great Blue Heron and Great Egret nesting abundance, the long term trend follows the opposite pattern we observed for open water birds. There were about 140 nests along Tomales Bay in 1991, falling to just under 50 around 2007, and then increasing to around 105 today.   
+ 
+
+```{r}
+
+trend_plotter(zspp = c("All.hep", "All.sbird", "All.wbird"), include.raw = FALSE)
+
+```
+  
+  
+As reported in our published papers, the causes for these population changes are a combination of local, regional and continent-wide factors. Local environmental conditions at Tomales Bay explain some of the variation in bird abundance, especially at shorter time scales, but Tomales Bay provides relatively large, intact, and undisturbed habitat for these birds and local factors seem relatively unimportant drivers of long term trends. Birds generally, and waterbirds specifically, are highly mobile and can move locations to find suitable habitats. However, many of these species are constrained by the tight schedules and other requirements of annual migrations. These species rely on critical overwintering and stopover food sources in order to make it to their northern breeding ranges with enough energy reserves to raise young. Changes to the availability of food and quality of sheltering habitat all along these migration routes is likely the leading cause of some of the declines we have observed.   
+
+
+
+## How do local conditions like rainfall, the Giacomini restoration, and ocean productivity influence bird abundance?  
+
+
+
+
+```{r}
+hep_rain_preds <- readRDS(here("data/hep_rain_preds")) %>% 
+  filter(subregion == "TBAY", species %in% c("GBHE", "GREG")) %>% 
+  mutate(common.name = translate_bird_names(species, "alpha.code", "common.name")) %>% 
+  dplyr::select(year, "rain.value" = subreg.rain, estimate, lci, uci, "alpha.code" = species, common.name) %>% 
+  mutate(waterbird.group = "Large herons and egrets")
+
+
+
+sbird_rain_preds <- readRDS(here("data/sbird_rain_preds")) %>% 
+  mutate(common.name = case_when(alpha.code == "All" ~ "All shorebirds",
+                      alpha.code == "DOSP" ~ "Dowitcher spp.",
+                      alpha.code == "YELL" ~ "Yellowlegs spp.",
+                      TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name"))) %>% 
+  dplyr::select(year, "rain.value" = seas.rain.mm, estimate, lci, uci, alpha.code, common.name) %>% 
+  mutate(waterbird.group = "Shorebirds")
+
+
+wbird_fresh_preds <- readRDS(here("data/wbird_fresh_preds")) %>% 
+  mutate(common.name = case_when(alpha.code == "All" ~ "All open water birds",
+                      TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name"))) %>% 
+  dplyr::select("year" = study.year, "rain.value" = fresh, estimate, lci, uci, alpha.code, common.name) %>% 
+  mutate(waterbird.group = "Open water birds")
+
+
+rain_preds <- bind_rows(hep_rain_preds, sbird_rain_preds, wbird_fresh_preds) %>% 
+  filter(!alpha.code %in% c("All", "ALL")) 
+
+rain_preds_wide <- rain_preds %>% 
+  group_by(waterbird.group, common.name) %>% 
+  mutate(which.rain = ifelse(rain.value == min(rain.value), "lower.sd", "upper.sd")) %>% 
+  pivot_wider(id_cols = c(waterbird.group, common.name), values_from = estimate, names_from = which.rain) %>% 
+  mutate(per.change = ((upper.sd - lower.sd)/upper.sd)* 100) %>% 
+  arrange(desc(waterbird.group), desc(common.name))
+
+
+correct.order <- rain_preds_wide[["common.name"]]
+
+group_means <- rain_preds_wide %>% 
+  group_by(waterbird.group) %>% 
+  summarise(sd.per.change = sd(per.change),
+         per.change = mean(per.change)) %>% 
+  ungroup() %>% 
+  mutate(common.name = paste(waterbird.group, "mean response"))
+
+  
+ rain_preds4plot <-  rain_preds_wide %>%  
+  bind_rows(group_means) %>%  
+  mutate(common.name = factor(common.name, levels = c(correct.order, group_means[["common.name"]])),
+         common.name = fct_relevel(common.name, "Large herons and egrets mean response", after = match("Great Blue Heron", levels(common.name))),
+         common.name = fct_relevel(common.name, "Shorebirds mean response", after = match("Black Turnstone", levels(common.name))),
+         common.name = fct_relevel(common.name, "Open water birds mean response", after = match("American Coot", levels(common.name)))
+         )  %>% 
+   ungroup() %>% 
+   arrange(waterbird.group)
+ 
+rain_preds4plot2 <- rain_preds4plot %>% 
+   full_join(rain_preds4plot %>%  
+               count(waterbird.group) %>% 
+               data.frame() %>%
+               arrange(desc(waterbird.group)) %>%
+               mutate(z = cumsum(n),
+                      max = (z + 0.5),
+                      min = (max - n)))%>%  
+  mutate(min = ifelse(waterbird.group == "Shorebirds", NA, min))
+ 
+ 
+ zcolors <- brewer.pal(9, "Greys")[3:5]
+
+```
+  
+
+
+```{r}
+sbird_giac_preds <- readRDS(here("data/sbird_giac_preds")) %>% 
+  mutate(common.name = case_when(alpha.code == "All" ~ "All shorebirds",
+                      alpha.code == "DOSP" ~ "Dowitcher spp.",
+                      alpha.code == "YELL" ~ "Yellowlegs spp.",
+                      TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name")),
+         giac.dummy = ifelse(giac.dummy == 0, "pre", "post"),
+         giac.dummy = factor(giac.dummy, levels = c("pre", "post"))) %>% 
+  filter(!alpha.code %in% c("All", "ALL")) 
+
+giac_preds_wide <- sbird_giac_preds %>% 
+  pivot_wider(id_cols = c(common.name), values_from = estimate, names_from = giac.dummy) %>% 
+              mutate(per.change = ((post - pre)/post)* 100) %>% 
+  arrange(common.name)
+
+
+
+giac.correct.order <- giac_preds_wide[["common.name"]]
+
+
+giac_preds_plot <- giac_preds_wide %>% 
+  bind_rows(giac_preds_wide %>%
+              summarise(sd.per.change = sd(per.change),
+                        per.change = mean(per.change)) %>% 
+              mutate(common.name = "Shorebirds mean response")) %>% 
+  mutate(common.name = factor(common.name, levels = c("Shorebirds mean response", giac.correct.order))) %>% 
+  arrange(common.name) %>% 
+  mutate(waterbird.group = "Shorebirds")
+
+```
+  
+
+
+```{r}
+wbird_moci_preds <- readRDS(here("data/wbird_moci_preds")) %>% 
+  mutate(common.name = case_when(alpha.code == "All" ~ "All open water birds",
+                      alpha.code == "SCAUP" ~ "Scaup spp.",
+                      TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name"))) %>% 
+  filter(!alpha.code %in% c("All", "ALL")) 
+
+moci_preds_wide <- wbird_moci_preds %>% 
+  mutate(which.moci = ifelse(moci == min(moci), "lower", "upper")) %>% 
+  pivot_wider(id_cols = c(common.name), values_from = estimate, names_from = which.moci) %>% 
+  mutate(per.change = ((upper - lower)/upper)* -100) %>% 
+  arrange(common.name)
+
+moci.correct.order <- moci_preds_wide[["common.name"]]
+
+
+moci_preds_plot <- moci_preds_wide %>% 
+  bind_rows(moci_preds_wide %>%
+              summarise(sd.per.change = sd(per.change),
+                        per.change = mean(per.change)) %>% 
+              mutate(common.name = "Open water birds mean response")) %>% 
+  mutate(common.name = factor(common.name, levels = c("Open water birds mean response", moci.correct.order))) %>% 
+  arrange(common.name)
+
+```
+  
+
+
+```{r}
+
+preds_plot <- bind_rows(rain_preds4plot2 %>% mutate(local.factor = "rain",
+                                                    local.factor.label = "Response to rain:\nfrom dry to wet years"),
+                        giac_preds_plot %>% mutate(local.factor = "giac",
+                                                   local.factor.label = "Response to Giacomini restoration:\nbefore to after"),
+                        moci_preds_plot %>% mutate(local.factor = "moci",
+                                                   local.factor.label = "Response to ocean conditions:\nwarmer temps/weaker upwelling to colder temps/stronger upwelling")) %>% 
+  mutate(zcolor = ifelse(per.change < 0, brewer.pal(11, "RdBu")[2], brewer.pal(11, "RdBu")[10])) %>% 
+  #filter(grepl("mean response", common.name)) %>% 
+  mutate(common.name = gsub(" mean response", "", common.name))
+
+
+
+
+min.x <- floor((min(preds_plot$per.change - preds_plot$sd.per.change))/10) * 10
+max.x <- ceiling((max(preds_plot$per.change + preds_plot$sd.per.change))/10) * 10
+
+pred_plotter <- function(zpreds_plot) {
+  effects_plot <- zpreds_plot %>% 
+  ggplot() + 
+    geom_segment(aes(x = -Inf, y = common.name, xend = per.change, yend = common.name), color = 'gray85', size = 1) +
+    geom_segment(aes(x = -Inf, y = common.name, xend = per.change - sd.per.change, yend = common.name), size = 1, color = 'gray50') +
+    geom_segment(aes(x = per.change, y = common.name, xend = 0, yend = common.name), color = zpreds_plot$zcolor, size = 5) +
+    geom_errorbar(aes(y = common.name, xmin = per.change - sd.per.change, xmax = per.change + sd.per.change), size = 1) +
+    geom_vline(xintercept = 0)  +
+    theme_bw() +
+    guides(color = "none") +
+    scale_y_discrete(limits=rev) +
+  facet_wrap(~local.factor.label, scales = "free_y", ncol = 1)+
+    labs(y = "",
+         x = "",
+         fill = "") +
+  xlim(min.x, max.x)
+return(effects_plot)
+}
+
+
+
+
+
+rain_means <- preds_plot %>% 
+  filter(local.factor == "rain", grepl("mean response", common.name)) %>% 
+  pred_plotter()
+
+
+giac_means <- preds_plot %>%  
+  filter(local.factor == "giac", grepl("mean response", common.name)) %>% 
+  pred_plotter()
+
+moci_means <- preds_plot %>% 
+  filter(local.factor == "moci", grepl("mean response", common.name)) %>% 
+  pred_plotter()
+
+plot_grid(rain_means, giac_means, moci_means, 
+          ncol = 1, 
+          rel_heights = c(3, 1.5, 1.5), 
+          align = "v", 
+          labels = c("", "", "% change in bird abundance"),
+          label_x = 0.25,
+          label_y = 0.15) + theme(plot.margin = margin(0, 0, 10, 0))
+
+
+```
+  
+  
+```{r}
+
+plot_grid(trend_plotter("DUNL"),
+          preds_plot %>%
+            filter(common.name == "Dunlin") %>%
+            pred_plotter()+
+  theme(axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()) +
+    labs(x = "% change in abundance"),
+          ncol = 1,
+          rel_heights = c(5, 4))
+
+```
+  
+
+## Taking a closer look at some individual species  
+
+We have also analyzed the trends of several individual waterbird species. Species specific trends provide more information than the overall group trends, and can help identify which species may warrant conservation action. For shorebirds and open water birds, we will look at some abundant species that represent the range of trends shown by other species. Plotted trend lines for all individual species we modeled are included at the end of this report.
+
+# Herons and Egrets  
+Great Blue Herons and Great Egrets show slightly different trend patterns. Great Blue Herons have shown a steady decline across most of the study period, only showing a slight possible reversal of that trend in the last 4-5 years. 
+
+
+```{r}
+
+trend_plotter(zspp = c("GBHE", "GREG"))
+
+```
+
+
+```{r include = FALSE}
+# We also have heron and egret monitoring data for the rest of the north SF Bay Area. How does Tomales Bay compare to trends across larger areas? We can summarize our monitoring data to show all nesting colonies along the outer Pacific coast of Marin and Sonoma Counties, and all colonies in the entire study area. For Great Blue Heron, 
+hep_preds %>% 
+  filter(!subregion %in% c("OUCnoTBAY"), species %in% c("GBHE", "GREG")) %>%
+  mutate(subreg.group = ifelse(subregion == "All", as.character(subreg.name), "Marin Co."),
+         subreg.group = factor(subreg.group, levels = c("Marin Co.", "Entire study area"))) %>% 
+  ggplot() +
+  geom_line(aes(x = year, y = estimate, color = subreg.name)) +
+  geom_ribbon(aes(x = year, ymin = lci, ymax = uci, fill = subreg.name), alpha = 0.25) +
+  geom_point(aes(x = year, y = tot.nests, color = subreg.name))  + 
+  facet_grid(subreg.group~common.name, scales = "free_y") +
+  labs(y = "Nest abundance",
+       x = "Year",
+       title = "",
+       color = "",
+       fill = "") +
+  theme_bw() +
+  theme(text = element_text(size=8))
+
+ggsave(here("figures/HEP_tbay_ouc_all_trends.png"), dpi = 300, width = 8)
+```
+
+
+
+# Shorebirds
+
+
+```{r}
+trend_plotter(zspp = c("DUNL", "WESA", "LESA", "YELL"))
+```
+
+
+# Open water birds
+
+```{r}
+
+trend_plotter(zspp = c("SUSC", "BUFF", "SCAUP"))
+
+```
+  
+  
+  
+Heron and egret nest abundance at Tomales Bay is higher in years with more rain. Across the entire North SF Bay region, herons and egrets are generally less abundant in very wet years. However, along Tomales Bay there may be a greater diversity of intact, available habitats that provide greater foraging opportunities in wetter years. In contrast, most open water birds and shorebird species are less abundant in wetter years. This is probably because their prey on become harder to find when there is a lot of freshwater runoff and sedimentation into the bay.
+ 
+```{r, fig.height=11, fig.width=8.5} 
+rain_preds4plot2  %>% 
+  ggplot() +
+    theme(panel.background = element_rect(fill = "transparent")) +
+    geom_segment(aes(x = -Inf, y = common.name, xend = per.change, yend = common.name), color = 'gray85', size = 1) +
+    geom_segment(aes(x = -Inf, y = common.name, xend = per.change - sd.per.change, yend = common.name), size = 1, color = 'gray50') +
+    geom_segment(data = filter(rain_preds4plot2, per.change < 0), aes(x = per.change, y = common.name, xend = 0, yend = common.name), color = brewer.pal(11, "RdBu")[2], size = 3) +
+    geom_segment(data = filter(rain_preds4plot2, per.change > 0), aes(x = per.change, y = common.name, xend = 0, yend = common.name), color = brewer.pal(11, "RdBu")[10], size = 3) +
+    geom_errorbar(aes(y = common.name, xmin = per.change - sd.per.change, xmax = per.change + sd.per.change), size = 1, width = 0.3) +
+  geom_vline(xintercept = 0)  +
+  geom_hline(yintercept = rain_preds4plot2$min, linewidth = 2) +
+    theme_bw() +
+    guides(color = "none") +
+    labs(y = "",
+         x = "% abundance change from dry to wet years",
+         fill = "",
+         title = "Bird response to rainfall")
+
+```
+  
+
+   
+For the Giacomini Wetland restoration, we only looked at the response of shorebird species, since they are the most likely species to use the new habitat there. Most shorebird species increased following the restoration. The three species that decreased don't generally use the types of habitats available in Giacomini wetland, so those declines may be associated with some other change in the environment that happened around the same time as the restoration.  
+
+```{r}
+giac_preds_plot %>% 
+  ggplot() + 
+    geom_segment(aes(x = -Inf, y = common.name, xend = per.change, yend = common.name), color = 'gray85', size = 1) +
+    geom_segment(aes(x = -Inf, y = common.name, xend = per.change - sd.per.change, yend = common.name), size = 1, color = 'gray50') +
+    geom_segment(data = filter(giac_preds_plot, per.change < 0), aes(x = per.change, y = common.name, xend = 0, yend = common.name), color = brewer.pal(11, "RdBu")[2], size = 5) +
+    geom_segment(data = filter(giac_preds_plot, per.change > 0), aes(x = per.change, y = common.name, xend = 0, yend = common.name), color = brewer.pal(11, "RdBu")[10], size = 5) +
+    geom_errorbar(aes(y = common.name, xmin = per.change - sd.per.change, xmax = per.change + sd.per.change), size = 1) +
+    geom_vline(xintercept = 0) +
+    theme_bw() +
+    guides(color = "none") +
+    labs(y = "",
+         x = "% abundance change following restoration",
+         fill = "",
+         title = "Bird response to the Giacomini restoration") +
+    scale_y_discrete(limits=rev)
+
+ggsave(here("figures/giac_effect.png"), dpi = 300)
+
+```
+
+  
+We only considered the effect of ocean conditions on the abundance of open water birds. Most of these species are more abundant on Tomales Bay in years when the ocean is colder and there is more upwelling. Tidal action and other currents can transport nutrients from the ocean into the bay, and this transport is stronger when there is stronger upwelling. Species that were less abundant during stronger upwelling years may have moved outside the bay to take advantage of foraging opportunities in the ocean.    
+
+```{r}
+moci_preds_plot %>% 
+  ggplot() + 
+    geom_segment(aes(x = -Inf, y = common.name, xend = per.change, yend = common.name), color = 'gray85', size = 1) +
+    geom_segment(aes(x = -Inf, y = common.name, xend = per.change - sd.per.change, yend = common.name), size = 1, color = 'gray50') +
+    geom_segment(data = filter(moci_preds_plot, per.change < 0), aes(x = per.change, y = common.name, xend = 0, yend = common.name), color = brewer.pal(11, "RdBu")[2], size = 5) +
+    geom_segment(data = filter(moci_preds_plot, per.change > 0), aes(x = per.change, y = common.name, xend = 0, yend = common.name), color = brewer.pal(11, "RdBu")[10], size = 5) +
+    geom_errorbar(aes(y = common.name, xmin = per.change - sd.per.change, xmax = per.change + sd.per.change), size = 1) +
+    geom_vline(xintercept = 0)  +
+    theme_bw() +
+    guides(color = "none") +
+    labs(y = "",
+         x = "% abundance change with colder ocean temps and stronger upwelling",
+         fill = "",
+         title = "Bird response to ocean conditions") +
+    scale_y_discrete(limits=rev)
+
+ggsave(here("figures/moci_effect.png"), dpi = 300)
+
+```
+  
+  
+## Appendix 1. Trend plots for all species
+
+
+# Herons and egrets
+```{r}
+trend_plotter("GBHE")
+```
+
+```{r}
+trend_plotter("GREG")
+```
+
+
+# Shorebirds
+
+```{r}
+trend_plotter("BBPL")
+```
+
+```{r}
+trend_plotter("BLTU")
+```
+
+```{r}
+trend_plotter("DOSP")
+```
+
+```{r}
+trend_plotter("DUNL")
+```
+
+```{r}
+trend_plotter("KILL")
+```
+
+```{r}
+trend_plotter("LESA")
+```
+
+```{r}
+trend_plotter("MAGO")
+```
+
+```{r}
+trend_plotter("SAND")
+```
+
+```{r}
+trend_plotter("SEPL")
+```
+
+```{r}
+trend_plotter("SPSA")
+```
+
+```{r}
+trend_plotter("WESA")
+```
+
+```{r}
+trend_plotter("WILL")
+```
+
+```{r}
+trend_plotter("YELL")
+```
+
+  
+# Open water birds
+
+
+```{r}
+trend_plotter("AMCO")
+```
+
+```{r}
+trend_plotter("AMWI")
+```
+
+```{r}
+trend_plotter("BLSC")
+```
+
+```{r}
+trend_plotter("BRAC")
+```
+
+```{r}
+trend_plotter("BRAN")
+```
+
+```{r}
+trend_plotter("BRPE")
+```
+
+```{r}
+trend_plotter("BUFF")
+```
+
+```{r}
+trend_plotter("CANG")
+```
+
+```{r}
+trend_plotter("COGO")
+```
+
+```{r}
+trend_plotter("COLO")
+```
+
+```{r}
+trend_plotter("COME")
+```
+
+```{r}
+trend_plotter("DCCO")
+```
+
+```{r}
+trend_plotter("EAGR")
+```
+
+```{r}
+trend_plotter("FOTE")
+```
+
+```{r}
+trend_plotter("GADW")
+```
+
+```{r}
+trend_plotter("GWTE")
+```
+
+```{r}
+trend_plotter("HOGR")
+```
+
+```{r}
+trend_plotter("MALL")
+```
+
+```{r}
+trend_plotter("NOPI")
+```
+
+```{r}
+trend_plotter("PALO")
+```
+
+```{r}
+trend_plotter("PBGR")
+```
+
+```{r}
+trend_plotter("PECO")
+```
+
+```{r}
+trend_plotter("RBME")
+```
+
+```{r}
+trend_plotter("RNGR")
+```
+
+```{r}
+trend_plotter("RTLO")
+```
+
+```{r}
+trend_plotter("RUDU")
+```
+
+```{r}
+trend_plotter("SCAUP")
+```
+
+```{r}
+trend_plotter("SUSC")
+```
+
+```{r}
+trend_plotter("WCGR")
+```
