@@ -59,14 +59,15 @@ spp_day_total_ungrouped <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon C
 spp_annual <- spp_day_total %>%
   group_by(study.year, date) %>% 
   summarise(bay.total = sum(bay.total)) %>% 
-  mutate(alpha.code = "ALL") %>% 
+  mutate(alpha.code = "All") %>% 
   bind_rows(spp_day_total %>% dplyr::select(study.year, date, alpha.code, bay.total)) %>% 
   group_by(study.year, alpha.code) %>% 
   summarise(p75.abund = floor(quantile(bay.total, 0.75)))
 
 
 # list of species detected >= 20 years. created by C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/waterbird_analyses/Tomales_waterbird_trends_2020/code/analysis1_prepare_data.R
-wbird_trend_spp <- readRDS(here("data/wbird_trend_spp"))
+wbird_trend_spp <- readRDS(here("data/wbird_trend_spp")) %>% 
+  mutate(alpha.code = ifelse(alpha.code == "ALL", "All", alpha.code))
 
 
 # fill in 0 for years when spp not detected
