@@ -82,7 +82,6 @@ wbird_fresh_preds <- readRDS(here("data/wbird_fresh_preds")) %>%
 
 
 rain_preds <- bind_rows(hep_rain_preds, sbird_rain_preds, wbird_fresh_preds) %>% 
-  filter(!alpha.code %in% c("All", "ALL")) %>% 
   mutate(predictor.varb = "rain",
          predictor.label = case_when(predictor.value == -1 ~ "Dry year",
                                      predictor.value == 0 ~ "Average rain",
@@ -123,8 +122,8 @@ all_preds_base <- bind_rows(rain_preds, sbird_giac_preds, wbird_moci_preds)
 combined_predictor_estimates <- all_preds_base %>% 
   filter(predictor.value == 0) %>% 
   select("base.estimate" = estimate, alpha.code, common.name, waterbird.group, predictor.varb) %>% 
-  full_join(all_preds) %>% 
-  mutate(across(c(estimate, lci, uci), ~. - base.estimate)) %>% 
+  full_join(all_preds_base) %>% 
+  mutate(across(c(estimate, lci, uci), ~. - base.estimate))
   
 
 saveRDS(combined_predictor_estimates, here("data/combined_predictor_estimates"))
