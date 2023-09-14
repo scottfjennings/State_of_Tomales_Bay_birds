@@ -28,7 +28,9 @@ rain_lag <- readRDS(here("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranc
   data.frame() %>% 
   arrange(subregion, year) %>% 
   group_by(subregion) %>% 
-  mutate(subreg.rain = subreg.rain + (lag(subreg.rain)/2) + (lag(subreg.rain, 2)/3))
+  mutate(subreg.rain = subreg.rain + (lag(subreg.rain)/2) + (lag(subreg.rain, 2)/3),
+         subreg.rain = scale(subreg.rain)[,1]) %>% 
+  ungroup()
 
 # total nests counted across the study area
 
@@ -110,9 +112,35 @@ subreg_mean_rain_lag <- trend_analysis_table %>%
   group_by(subregion, subreg.name) %>% 
   summarise(mean.subreg.rain = mean(subreg.rain, na.rm = TRUE))
 
-# fit_mods_glmnb_year2 from "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/hep_analyses/how_are_the_egrets_doing/code/ms_analysis/hep_trend_utilities.R"
+
+#' Fit negative binomial glm on untransformed nest abundance with year^2 as predictor
+#'
+#' @param zspp 
+#' @param zsubreg 
+#'
+#' @return
+#' @export
+#' 
+#' @details
+#' modified from "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/hep_analyses/how_are_the_egrets_doing/code/ms_analysis/hep_trend_utilities.R"
+#' 
+#'
+#' @examples
+#' spp_subreg_mods_glmnb <- map2(spp_subreg$species, spp_subreg$subregion, fit_mods_glmbn)
+#' names(spp_subreg_mods_glmnb) <- spp_subreg$spp.subreg
+fit_mods_glmbn_year2 <- function(zspp, zsubreg) {
+  
+  zdat <- trend_analysis_table %>% 
+    filter(species == zspp, subregion == zsubreg)
+  
+  zmod <- MASS::glm.nb(data = zdat, formula = tot.nests ~ poly(year, 2) + subreg.rain)
+  
+  }
+
+
 spp_subreg_mods <- map2(spp_subreg$species, spp_subreg$subregion, fit_mods_glmbn_year2)
 names(spp_subreg_mods) <- spp_subreg$spp.subreg
+
 
 
 # get_preds_glmnb from "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/hep_analyses/how_are_the_egrets_doing/code/ms_analysis/hep_trend_utilities.R"
@@ -157,11 +185,12 @@ get_rain_preds_glmnb <- function(zmod, zmod.name) {
   #                     subreg.rain = c(mean(ana_table$subreg.rain, na.rm = TRUE) - (0.5 * sd(ana_table$subreg.rain, na.rm = TRUE)),
   #                                     mean(ana_table$subreg.rain, na.rm = TRUE) + (0.5 * sd(ana_table$subreg.rain, na.rm = TRUE))))
   
-  znewdat = data.frame(year = floor(mean(ana_table$year)),
-                       subreg.rain = c(quantile(ana_table$subreg.rain, 0.25, na.rm = TRUE),
-                                       quantile(ana_table$subreg.rain, 0.75, na.rm = TRUE)))
+  #znewdat = data.frame(year = floor(mean(ana_table$year)),
+  #                     subreg.rain = c(quantile(ana_table$subreg.rain, 0.25, na.rm = TRUE),
+  #                                     quantile(ana_table$subreg.rain, 0.75, na.rm = TRUE)))
   
-  
+  znewdat = data.frame(year = floor(mean(trend_analysis_table$year)),
+                       subreg.rain = c(-1, 0, 1))
   
   
   ilink <- family(zmod)$linkinv

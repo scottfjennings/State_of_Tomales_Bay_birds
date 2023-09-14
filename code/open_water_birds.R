@@ -171,16 +171,19 @@ get_wbird_fresh_preds <- function(zmod, zmod.name) {
 #                       moci = mean(ana_table$moci))
   
   
-  znewdat = data.frame(study.year = floor(mean(ana_table$study.year)),
-                       fresh = c(mean(ana_table$fresh) - (0.5 * sd(ana_table$fresh)),
-                                 mean(ana_table$fresh) + (0.5 * sd(ana_table$fresh))),
-                       moci = mean(ana_table$moci))
+  #znewdat = data.frame(study.year = floor(mean(ana_table$study.year)),
+  #                     fresh = c(mean(ana_table$fresh) - (0.5 * sd(ana_table$fresh)),
+  #                               mean(ana_table$fresh) + (0.5 * sd(ana_table$fresh))),
+  #                     moci = mean(ana_table$moci))
   
+  #znewdat = data.frame(study.year = floor(mean(ana_table$study.year)),
+  #                     fresh = c(quantile(ana_table$fresh, 0.25),
+  #                               quantile(ana_table$fresh, 0.75)),
+  #                     moci = mean(ana_table$moci))
   
   znewdat = data.frame(study.year = floor(mean(ana_table$study.year)),
-                       fresh = c(quantile(ana_table$fresh, 0.25),
-                                 quantile(ana_table$fresh, 0.75)),
-                       moci = mean(ana_table$moci))
+                       fresh = c(-1, 0, 1),
+                       moci = 0)
   
   
   ilink <- family(zmod)$linkinv
@@ -217,15 +220,19 @@ get_wbird_moci_preds <- function(zmod, zmod.name) {
   ana_table <- spp_annual_full_preds %>% 
     filter(alpha.code == zmod.name)
   
-#  znewdat = data.frame(study.year = floor(mean(ana_table$study.year)),
-#                       fresh = mean(ana_table$fresh),
-#                       moci = seq(min(ana_table$moci), max(ana_table$moci), length.out = 10))
+# zmoci = seq(min(ana_table$moci), max(ana_table$moci), length.out = 10)
+  
+  #zmoci = seq(quantile(ana_table$moci, 0.25), quantile(ana_table$moci, 0.75))
+  
+  zmoci = c(-1, 0, 1)
   
   znewdat = data.frame(study.year = floor(mean(ana_table$study.year)),
-                       fresh = mean(ana_table$fresh),
-                       moci = seq(quantile(ana_table$moci, 0.25), quantile(ana_table$moci, 0.75)))
+                       fresh = 0,
+                       moci = zmoci)
   
-  ilink <- family(zmod)$linkinv
+
+  
+    ilink <- family(zmod)$linkinv
   best_pred = predict(zmod, znewdat, se.fit=TRUE, type='link') %>% 
     data.frame() %>% 
     bind_cols(znewdat) %>% 

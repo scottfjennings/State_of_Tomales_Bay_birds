@@ -21,7 +21,9 @@ rain <- read.csv("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projec
   group_by(year) %>% 
   summarise(seas.rain.mm = sum(mean.rain),
             seas.rain.mm = round(seas.rain.mm)) %>% 
-  filter(year > 1988)
+  ungroup() %>% 
+  filter(year > 1988) %>% 
+  mutate(seas.rain.mm = scale(seas.rain.mm)[,1])
 
 
 # annual estimate each species
@@ -49,11 +51,6 @@ analysis_table <- sbirds %>%
   filter(season == "winter")
 
 
-newdat <- analysis_table %>% 
-  distinct(year) %>% 
-  mutate(giac.dummy = ifelse(year < 2009, 0, 1),
-    seas.rain.mm = mean(rain$seas.rain.mm))  
-
 zmaxit = 400
 
 fit_big_mod <- function(zspp) {
@@ -68,6 +65,13 @@ fit_big_mod <- function(zspp) {
 
 # ---
 sbird_predicter_glm <- function(zmod, zmod.name){
+  
+  
+  newdat <- analysis_table %>% 
+    distinct(year) %>% 
+    mutate(giac.dummy = ifelse(year < 2009, 0, 1),
+           seas.rain.mm = 0)  
+  
   ilink <- family(zmod)$linkinv
   all_best_pred = predict(zmod, newdat, se.fit=TRUE, type='link') %>% 
     data.frame() %>% 
@@ -122,12 +126,15 @@ get_sbird_rain_preds_glmnb <- function(zmod, zmod.name) {
   #                     giac.dummy = 0)
   
   
+  #znewdat = data.frame(year = floor(mean(analysis_table$year)),
+  #                     seas.rain.mm = c(quantile(analysis_table$seas.rain.mm, 0.25),
+  #                                      quantile(analysis_table$seas.rain.mm, 0.75)),
+  #                     giac.dummy = 0)
+  
+  
   znewdat = data.frame(year = floor(mean(analysis_table$year)),
-                       seas.rain.mm = c(quantile(analysis_table$seas.rain.mm, 0.25),
-                                        quantile(analysis_table$seas.rain.mm, 0.75)),
+                       seas.rain.mm = c(-1, 0, 1),
                        giac.dummy = 0)
-  
-  
   
   
   ilink <- family(zmod)$linkinv
@@ -160,7 +167,7 @@ saveRDS(sbird_rain_preds, here("data/sbird_rain_preds"))
 get_sbird_giac_preds_glmnb <- function(zmod, zmod.name) { 
   
   znewdat = data.frame(year = floor(mean(analysis_table$year)),
-                       seas.rain.mm = mean(analysis_table$seas.rain.mm),
+                       seas.rain.mm = 0,
                        giac.dummy = c(0, 1))
   
   ilink <- family(zmod)$linkinv
