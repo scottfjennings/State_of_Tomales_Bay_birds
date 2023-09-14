@@ -178,19 +178,17 @@ get_rain_preds_glmnb <- function(zmod, zmod.name) {
   ana_table <- trend_analysis_table %>% 
     right_join(spp_subreg)
   
-  #znewdat = data.frame(year = floor(mean(ana_table$year)),
-  #                     subreg.rain = seq(min(ana_table$subreg.rain, na.rm = TRUE), max(ana_table$subreg.rain, na.rm = TRUE), length.out = 10))
+  #zsubreg.rain = seq(min(ana_table$subreg.rain, na.rm = TRUE), max(ana_table$subreg.rain, na.rm = TRUE), length.out = 10)
   
-  #znewdat = data.frame(year = floor(mean(ana_table$year)),
-  #                     subreg.rain = c(mean(ana_table$subreg.rain, na.rm = TRUE) - (0.5 * sd(ana_table$subreg.rain, na.rm = TRUE)),
-  #                                     mean(ana_table$subreg.rain, na.rm = TRUE) + (0.5 * sd(ana_table$subreg.rain, na.rm = TRUE))))
+  #zsubreg.rain = c(mean(ana_table$subreg.rain, na.rm = TRUE) - (0.5 * sd(ana_table$subreg.rain, na.rm = TRUE)), mean(ana_table$subreg.rain, na.rm = TRUE) + (0.5 * sd(ana_table$subreg.rain, na.rm = TRUE)))
   
-  #znewdat = data.frame(year = floor(mean(ana_table$year)),
-  #                     subreg.rain = c(quantile(ana_table$subreg.rain, 0.25, na.rm = TRUE),
-  #                                     quantile(ana_table$subreg.rain, 0.75, na.rm = TRUE)))
+  #zsubreg.rain = c(quantile(ana_table$subreg.rain, 0.25, na.rm = TRUE),
+  #                                     quantile(ana_table$subreg.rain, 0.75, na.rm = TRUE))
+  
+  zsubreg.rain = c(-1, 0, 1)
   
   znewdat = data.frame(year = floor(mean(trend_analysis_table$year)),
-                       subreg.rain = c(-1, 0, 1))
+                       subreg.rain = zsubreg.rain)
   
   
   ilink <- family(zmod)$linkinv
