@@ -166,7 +166,7 @@ saveRDS(sbird_rain_preds, here("data/sbird_rain_preds"))
 #' @examples
 get_sbird_giac_preds_glmnb <- function(zmod, zmod.name) { 
   
-  znewdat = data.frame(year = floor(mean(analysis_table$year)),
+  znewdat = data.frame(year = 2009,
                        seas.rain.mm = 0,
                        giac.dummy = c(0, 1))
   
