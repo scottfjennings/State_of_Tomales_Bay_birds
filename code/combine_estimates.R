@@ -124,8 +124,8 @@ combined_predictor_estimates <- all_preds_base %>%
   filter(predictor.value == 0) %>% 
   select("base.estimate" = estimate, alpha.code, common.name, waterbird.group, predictor.varb) %>% 
   full_join(all_preds) %>% 
-  mutate(across(c(estimate, lci, uci), ~. - base.estimate))
-
+  mutate(across(c(estimate, lci, uci), ~. - base.estimate)) %>% 
+  
 
 saveRDS(combined_predictor_estimates, here("data/combined_predictor_estimates"))
 
