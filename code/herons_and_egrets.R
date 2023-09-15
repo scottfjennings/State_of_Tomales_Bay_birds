@@ -6,18 +6,18 @@ library(birdnames)
 options(scipen = 999)
 # for functions to read in Access data and do standard cleaning
 source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_code/HEP_utility_functions.R")
-# for the function for model fitting from how_are_the_egrets_doing
-source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/hep_analyses/how_are_the_egrets_doing/code/ms_analysis/hep_trend_utilities.R")
+
+source(here("code/utilities.R"))
 
 hepdata_location = here("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/HEP_data_work/HEP_data/HEPDATA.accdb")
 
-
+# tomales bay colonies
 tbay_parent_codes <- c(50, 152, 119, 122, 143, 83, 114, 32, 160, 113)
-
+# other west marin colonies
 w_marin_parent_codes <- c(137, 94, 17, 1, 53, 186, 47, 71)
 
 
-#  data ----
+# prepare data ----
 hep_sites <- hep_sites_from_access(hepdata_location) %>% 
   dplyr::select(code, parent.code, site.name, parent.site.name, subregion)
 
@@ -112,7 +112,7 @@ subreg_mean_rain_lag <- trend_analysis_table %>%
   group_by(subregion, subreg.name) %>% 
   summarise(mean.subreg.rain = mean(subreg.rain, na.rm = TRUE))
 
-
+# model fitting ----
 #' Fit negative binomial glm on untransformed nest abundance with year^2 as predictor
 #'
 #' @param zspp 
@@ -141,9 +141,52 @@ fit_mods_glmbn_year2 <- function(zspp, zsubreg) {
 spp_subreg_mods <- map2(spp_subreg$species, spp_subreg$subregion, fit_mods_glmbn_year2)
 names(spp_subreg_mods) <- spp_subreg$spp.subreg
 
+# extract model output ----
+# year estimates ----
+# get_preds_glmnb copied from "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/hep_analyses/how_are_the_egrets_doing/code/ms_analysis/hep_trend_utilities.R"
 
 
-# get_preds_glmnb from "C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/HEP/hep_analyses/how_are_the_egrets_doing/code/ms_analysis/hep_trend_utilities.R"
+#' Extract and backtransform model predictions and their CI from the Negative Binomial GLMs
+#'
+#' @param zmod 
+#' @param zmod.name 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+#' preds_glmnb <- map2_df(spp_subreg_mods_glmnb, names(spp_subreg_mods_glmnb), get_preds_glmnb)
+get_preds_glmnb <- function(zmod, zmod.name) { 
+  
+  spp_subreg <- zmod.name %>% 
+    data.frame() %>% 
+    rename(spp.subreg = 1) %>% 
+    separate(spp.subreg, into = c("species", "subregion"), sep = "_")
+  
+  ana_table <- trend_analysis_table %>% 
+    right_join(spp_subreg)
+  
+  sub_rain <- subreg_mean_rain_lag %>%  
+    #readRDS(here("data/subreg_rain")) %>%
+    right_join(spp_subreg) %>% 
+    distinct(mean.subreg.rain)
+  
+  znewdat = data.frame(year = seq(min(ana_table$year), max(ana_table$year)),
+                       subreg.rain = sub_rain$mean.subreg.rain)
+  
+  ilink <- family(zmod)$linkinv
+  best_pred = predict(zmod, znewdat, se.fit=TRUE, type='link') %>% 
+    data.frame() %>% 
+    cbind(znewdat) %>% 
+    ungroup() %>% 
+    mutate(estimate = ilink(fit),
+           lci = ilink(fit - (1.96 * se.fit)),
+           uci = ilink(fit + (1.96 * se.fit))) %>% 
+    bind_cols(spp_subreg)
+}
+
+
+
 preds <- map2_df(spp_subreg_mods, names(spp_subreg_mods), get_preds_glmnb) %>% 
   full_join(trend_analysis_table %>% 
               select(year, subregion, subreg.name, species, common.name, tot.nests)) %>% 
@@ -151,6 +194,9 @@ preds <- map2_df(spp_subreg_mods, names(spp_subreg_mods), get_preds_glmnb) %>%
          subreg.name = factor(subreg.name, levels = c("Tomales Bay", "Outer Pacific Coast, North", "Outer Coast, no Tomales Bay", "Entire study area")))
 
 saveRDS(preds, "data/HEP_predictions")
+
+# model coeficients and 95% CI ----
+
 
 coef_ci <- map2_df(spp_subreg_mods, names(spp_subreg_mods), get_coefs_cis)
 saveRDS(coef_ci, "data/HEP_coef_ci")

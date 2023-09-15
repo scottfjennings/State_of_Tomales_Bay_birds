@@ -14,6 +14,51 @@ custom_bird_list <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon R
 options(scipen = 999)
 
 
+hep_coef <- readRDS(here("data/HEP_coef_ci")) %>% 
+  separate(model, into = c("species", "subregion"), sep = "_") %>%
+  filter(subregion == "TBAY") %>%
+  rename("alpha.code" = species) %>% 
+  mutate(alpha.code = ifelse(alpha.code == "All", "All.hep", alpha.code),
+         common.name = ifelse(alpha.code == "All.hep", 
+                              "Large herons and egrets", 
+                              translate_bird_names(alpha.code, "alpha.code", "common.name")),
+         common.name = ifelse(alpha.code == "DCCO", 
+                              paste("Breeding", common.name), 
+                              common.name),
+         waterbird.group = ifelse(alpha.code == "DCCO", common.name, "Large herons and egrets")) %>% 
+  select(-subregion)
+
+sbird_coef <- readRDS(here("data/sbird_coef_ci")) %>%
+  rename("alpha.code" = model) %>% 
+  mutate(alpha.code = ifelse(alpha.code == "All", "All.sbird", alpha.code),
+         common.name = case_when(alpha.code == "All.sbird" ~ "All shorebirds",
+                                 alpha.code == "DOSP" ~ "Dowitcher spp.",
+                                 alpha.code == "YELL" ~ "Yellowlegs spp.",
+                                 TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name")),
+         waterbird.group = "Shorebirds")
+
+wbird_coef <- readRDS(here("data/wbird_coef_ci")) %>%
+  rename("alpha.code" = model) %>% 
+  mutate(alpha.code = ifelse(alpha.code == "ALL", "All.wbird", alpha.code),
+         common.name = case_when(alpha.code == "All.wbird" ~ "All open water birds", 
+                                 alpha.code == "SCAUP" ~ "Scaup spp.",
+                                 TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name")),
+         waterbird.group = "Open water birds")
+
+
+
+
+combined_predictor_coefs <- bind_rows(hep_coef, sbird_coef, wbird_coef)  %>% 
+  filter(varb %in% c("subreg.rain", "seas.rain.mm", "giac.dummy", "fresh", "moci")) %>% 
+  mutate(varb = case_when(grepl("rain|fresh", varb) ~ "rain",
+                          grepl("giac", varb) ~ "giac",
+                          TRUE ~ as.character(varb)))
+
+saveRDS(combined_predictor_coefs, here("data/combined_predictor_coefs"))
+
+
+
+
 # overall trends ----
 hep_preds <- readRDS(here("data/HEP_predictions"))
 sbird_preds <- readRDS(here("data/sbird_preds"))
@@ -123,9 +168,17 @@ combined_predictor_estimates <- all_preds_base %>%
   filter(predictor.value == 0) %>% 
   select("base.estimate" = estimate, alpha.code, common.name, waterbird.group, predictor.varb) %>% 
   full_join(all_preds_base) %>% 
-  mutate(across(c(estimate, lci, uci), ~. - base.estimate))
+  mutate(abs.change.est = estimate - base.estimate,
+         abs.change.lci = lci - base.estimate,
+         abs.change.uci = uci - base.estimate,
+         per.change.est = ((estimate - base.estimate)/estimate)* 100,
+         per.change.lci = (estimate/lci) * per.change.est,
+         per.change.uci = (estimate/uci) * per.change.est)
   
 
 saveRDS(combined_predictor_estimates, here("data/combined_predictor_estimates"))
+
+
+
 
 

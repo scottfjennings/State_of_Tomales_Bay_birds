@@ -9,6 +9,9 @@ source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_mo
 source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/waterbird_data_work/code/utility/waterbird_utility_functions.R")
 source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/waterbird_analyses/Tomales_waterbird_trends_2020/code/analysis_utilities.R")
 
+
+source(here("code/utilities.R"))
+
 custom_bird_list <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/my_R_general/birdnames_support/data/custom_bird_list")
 
 
@@ -107,6 +110,16 @@ all_spp_mod<- map(wbird_trend_spp$alpha.code, fit_wbird_mod)
 names(all_spp_mod) <- wbird_trend_spp$alpha.code
 
 # saveRDS(all_spp_mods, here("fitted_models/all_spp_mods"))
+
+
+# model coeficients and 95% CI ----
+
+
+coef_ci <- map2_df(all_spp_mod, names(all_spp_mod), get_coefs_cis)
+saveRDS(coef_ci, "data/wbird_coef_ci")
+
+
+
 
 
 # wbird_mod_preds adapted from mod_predictions_link in C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/waterbird_analyses/Tomales_waterbird_trends_2020/code/analysis_utilities.R

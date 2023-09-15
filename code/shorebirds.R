@@ -8,6 +8,8 @@ library(MASS)
 options(scipen = 999)
 
 
+source(here("code/utilities.R"))
+
 exclude_date <- as.Date(c("1990-01-04", "1990-02-12", "2010-01-18"))
 
 sbirds <- readRDS(here("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/shorebirds/ACR_shorebird_data_management/data_files/rds/shorebirds_for_analysis"))%>% 
@@ -89,7 +91,6 @@ zspp_list <- c("All", "DUNL", "WESA", "MAGO", "LESA", "SAND", "WILL", "DOSP", "B
 
 
 
-
 sbird_mods <- map(zspp_list, fit_big_mod)
 
 names(sbird_mods) <- zspp_list
@@ -98,9 +99,34 @@ names(sbird_mods) <- zspp_list
 sbird_preds <- map2_df(sbird_mods, names(sbird_mods), sbird_predicter_glm) %>% 
   left_join(analysis_table %>% dplyr::select(year, alpha.code, p75.total.sbirds))
 
-
-
 saveRDS(sbird_preds, here("data/sbird_preds"))
+
+# model coeficients and 95% CI ----
+# DOSP model throwing error, need to get CI manually from SE
+dosp.coef <- coef(sbird_mods$DOSP) %>%
+  data.frame() %>% 
+  rename("coef" = 1) %>% 
+  rownames_to_column("varb") 
+
+dosp_cis  <- summary(sbird_mods$DOSP) %>%
+  coefficients() %>% 
+  data.frame() %>% 
+  rownames_to_column("varb") %>% 
+  mutate(lci = Estimate - (1.96 * Std..Error),
+         uci = Estimate + (1.96 * Std..Error)) %>% 
+  dplyr::select(varb, "coef" = Estimate, lci, uci)
+
+dosp_coef_cis <- full_join(dosp.coef, dosp_cis) %>% 
+  mutate(per.change.estimate = 100 * (exp(coef)-1),
+         per.change.lci = 100 * (exp(lci)-1),
+         per.change.uci = 100 * (exp(uci)-1),
+         model = "DOSP")
+
+coef_ci <- map2_df(sbird_mods[-grep("DOSP", names(sbird_mods))], names(sbird_mods[-grep("DOSP", names(sbird_mods))]), get_coefs_cis) %>% 
+  bind_rows(dosp_coef_cis)
+saveRDS(coef_ci, "data/sbird_coef_ci")
+
+
 
 # estimated effect size of rainfall and Giacomini restoration
 
@@ -152,6 +178,9 @@ get_sbird_rain_preds_glmnb <- function(zmod, zmod.name) {
 
 sbird_rain_preds <- map2_df(sbird_mods, names(sbird_mods), get_sbird_rain_preds_glmnb)
 saveRDS(sbird_rain_preds, here("data/sbird_rain_preds"))
+
+
+
 
 
 
