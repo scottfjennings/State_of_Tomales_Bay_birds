@@ -13,7 +13,7 @@ custom_bird_list <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon R
 
 options(scipen = 999)
 
-
+# model coefficients for non-year variables ----
 hep_coef <- readRDS(here("data/HEP_coef_ci")) %>% 
   separate(model, into = c("species", "subregion"), sep = "_") %>%
   filter(subregion == "TBAY") %>%
@@ -85,7 +85,7 @@ combined_trend_estimates <- bind_rows(hep_preds %>%
                                         wbird_preds %>%
                                           rename("year" = study.year,
                                                  "abundance" = p75.abund) %>% 
-                                          mutate(alpha.code = ifelse(alpha.code == "ALL", "All.wbird", alpha.code),
+                                          mutate(alpha.code = ifelse(alpha.code == "All", "All.wbird", alpha.code),
                                                  common.name = case_when(alpha.code == "All.wbird" ~ "All open water birds", 
                                                                          alpha.code == "SCAUP" ~ "Scaup spp.",
                                                                          TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name")),
