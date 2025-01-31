@@ -4,6 +4,7 @@ library(tidyverse)
 library(here)
 library(birdnames)
 library(MASS)
+library(AICcmodavg)
 
 options(scipen = 999)
 
@@ -17,11 +18,11 @@ sbirds <- readRDS(here("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/
 
 
 # rain from C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Rainfall/get_PRISM.R
-rain <- read.csv("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Rainfall/derived_data/tomales_mean_month_rain.csv") %>% 
+rain <- read.csv("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/general_data_sources/Rainfall/data/derived_data/tomales_mean_month_rain.csv") %>% 
   mutate(year = ifelse(month < 7, year - 1, year)) %>% 
   filter(month <= 2 | month > 7) %>% 
   group_by(year) %>% 
-  summarise(seas.rain.mm = sum(mean.rain),
+  summarise(seas.rain.mm = sum(tomales.rain.mm),
             seas.rain.mm = round(seas.rain.mm)) %>% 
   ungroup() %>% 
   filter(year > 1988) %>% 
@@ -65,41 +66,87 @@ fit_big_mod <- function(zspp) {
   
 }
 
-# ---
-sbird_predicter_glm <- function(zmod, zmod.name){
+fit_mod_set <- function(zspp) {
+  sbirds_winter <- analysis_table %>% 
+    filter(alpha.code == zspp)
   
+  # big_mod <- glm.nb(floor(p75.total.sbirds) ~ poly(year, 2) * section + giac.dummy + seas.rain.mm + mean.bird.hunters, data = sbirds_winter, maxit = zmaxit)
+  mods <- list(
+  year2_rain_giac = glm.nb(floor(p75.total.sbirds) ~ poly(year, 2) + seas.rain.mm + giac.dummy, data = sbirds_winter, maxit = zmaxit),
+  year2_rain = glm.nb(floor(p75.total.sbirds) ~ poly(year, 2) + seas.rain.mm, data = sbirds_winter, maxit = zmaxit),
+  year2_giac = glm.nb(floor(p75.total.sbirds) ~ poly(year, 2) + giac.dummy, data = sbirds_winter, maxit = zmaxit),
+  
+  year_rain_giac = glm.nb(floor(p75.total.sbirds) ~ year + seas.rain.mm + giac.dummy, data = sbirds_winter, maxit = zmaxit),
+  year_rain = glm.nb(floor(p75.total.sbirds) ~ year + seas.rain.mm, data = sbirds_winter, maxit = zmaxit),
+  year_giac = glm.nb(floor(p75.total.sbirds) ~ year + giac.dummy, data = sbirds_winter, maxit = zmaxit),
+  
+  year2 = glm.nb(floor(p75.total.sbirds) ~ poly(year, 2), data = sbirds_winter, maxit = zmaxit),
+  year = glm.nb(floor(p75.total.sbirds) ~ year, data = sbirds_winter, maxit = zmaxit),
+  rain = glm.nb(floor(p75.total.sbirds) ~ seas.rain.mm, data = sbirds_winter, maxit = zmaxit),
+  giac = glm.nb(floor(p75.total.sbirds) ~ giac.dummy, data = sbirds_winter, maxit = zmaxit),
+  
+  intercept = glm.nb(floor(p75.total.sbirds) ~ 1, data = sbirds_winter, maxit = zmaxit)
+  )
+}
+
+# ---
+sbird_mod_avg_predicter <- function(zmods){
+  
+  spp_mods <- zmods[[1]]
   
   newdat <- analysis_table %>% 
     distinct(year) %>% 
     mutate(giac.dummy = ifelse(year < 2009, 0, 1),
            seas.rain.mm = 0)  
   
-  ilink <- family(zmod)$linkinv
-  all_best_pred = predict(zmod, newdat, se.fit=TRUE, type='link') %>% 
+  all_best_pred = modavgPred(spp_mods, names(spp_mods), newdat, se.fit=TRUE, type='response') %>% 
     data.frame() %>% 
+    dplyr::select(-type, -contains("matrix")) %>% 
     cbind(newdat) %>% 
-    ungroup() %>% 
-    mutate(predicted = ilink(fit),
-           lci = ilink(fit - (1.96 * se.fit)),
-           uci = ilink(fit + (1.96 * se.fit)),
-           alpha.code = zmod.name)
+    mutate(alpha.code = names(zmods))
+  
+  return(all_best_pred)
 }
 
 
 
-zspp_list <- c("All", "DUNL", "WESA", "MAGO", "LESA", "SAND", "WILL", "DOSP", "BBPL", "BLTU", "YELL", "SEPL", "KILL", "SPSA")
+zspp_list <- c("All", "DUNL", "WESA", "MAGO", "LESA", "SAND", "WILL", "DOSP", "BBPL", "BLTU", "YELL", "SEPL", "KILL"
+               #, "SPSA"
+               )
 
 
 
-sbird_mods <- map(zspp_list, fit_big_mod)
+sbird_mods <- map(zspp_list, fit_mod_set)
 
 names(sbird_mods) <- zspp_list
 
+zz <- sbird_mod_avg_predicter(sbird_mods[2])
 
-sbird_preds <- map2_df(sbird_mods, names(sbird_mods), sbird_predicter_glm) %>% 
+
+sbird_preds <- bind_rows(sbird_mod_avg_predicter(sbird_mods[1]),
+                         sbird_mod_avg_predicter(sbird_mods[2]),
+                         sbird_mod_avg_predicter(sbird_mods[3]),
+                         sbird_mod_avg_predicter(sbird_mods[4]),
+                         sbird_mod_avg_predicter(sbird_mods[5]),
+                         sbird_mod_avg_predicter(sbird_mods[6]),
+                         sbird_mod_avg_predicter(sbird_mods[7]),
+                         sbird_mod_avg_predicter(sbird_mods[8]),
+                         sbird_mod_avg_predicter(sbird_mods[9]),
+                         sbird_mod_avg_predicter(sbird_mods[10]),
+                         sbird_mod_avg_predicter(sbird_mods[11]),
+                         sbird_mod_avg_predicter(sbird_mods[12]),
+                         sbird_mod_avg_predicter(sbird_mods[13]))
+  
+  
+  
+  
+sbird_preds <- sbird_preds %>% 
   left_join(analysis_table %>% dplyr::select(year, alpha.code, p75.total.sbirds))
 
 saveRDS(sbird_preds, here("data/sbird_preds"))
+
+############### run to here for basic abundance summary
+
 
 # model coeficients and 95% CI ----
 # DOSP model throwing error, need to get CI manually from SE
