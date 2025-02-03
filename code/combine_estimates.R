@@ -40,10 +40,10 @@ sbird_coef <- readRDS(here("data/sbird_coef_ci")) %>%
 wbird_coef <- readRDS(here("data/wbird_coef_ci")) %>%
   rename("alpha.code" = model) %>% 
   mutate(alpha.code = ifelse(alpha.code == "ALL", "All.wbird", alpha.code),
-         common.name = case_when(alpha.code == "All.wbird" ~ "All open water birds", 
+         common.name = case_when(alpha.code == "All.wbird" ~ "All Water birds", 
                                  alpha.code == "SCAUP" ~ "Scaup spp.",
                                  TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name")),
-         waterbird.group = "Open water birds")
+         waterbird.group = "Water birds")
 
 
 
@@ -52,11 +52,43 @@ combined_predictor_coefs <- bind_rows(hep_coef, sbird_coef, wbird_coef)  %>%
   filter(varb %in% c("subreg.rain", "seas.rain.mm", "giac.dummy", "fresh", "moci")) %>% 
   mutate(varb = case_when(grepl("rain|fresh", varb) ~ "rain",
                           grepl("giac", varb) ~ "giac",
-                          TRUE ~ as.character(varb)))
+                          TRUE ~ as.character(varb))) %>% 
+  select(-coef, -lci, -uci) %>% 
+  rename("predictor.varb" = varb,
+         "estimate" = per.change.estimate,
+         "lci" = per.change.lci,
+         "uci" = per.change.uci) %>% 
+  mutate(predictor.varb.label = case_when(predictor.varb == "rain" ~ "Response to rain",
+                                          predictor.varb == "giac" ~ "Response to Giacomini restoration",
+                                          predictor.varb == "moci" ~ "Response to ocean conditions"))
 
 saveRDS(combined_predictor_coefs, here("data/combined_predictor_coefs"))
 
+combined_predictor_coefs_up_down <- bind_rows(combined_predictor_coefs %>%
+                                   mutate(predictor.label = case_when(predictor.varb == "rain" ~ "Wet year",
+                                                                      predictor.varb == "giac" ~ "Post-\nrestoration",
+                                                                      predictor.varb == "moci" ~ "Warm ocean/\nweak upwelling"),
+                                          predictor.value = 1),
+                                 combined_predictor_coefs %>%
+                                   mutate(predictor.label = case_when(predictor.varb == "rain" ~ "Average rain year",
+                                                                      predictor.varb == "giac" ~ "Pre-\nrestoration",
+                                                                      predictor.varb == "moci" ~ "Average ocean\nconditions"),
+                                          predictor.value = 0,
+                                          lci = lci - estimate,
+                                          uci = uci - estimate,
+                                          estimate = estimate - estimate),
+                                 combined_predictor_coefs %>%
+                                   filter(predictor.varb != "giac") %>% 
+                                   mutate(predictor.label = case_when(predictor.varb == "rain" ~ "Dry year",
+                                                                      predictor.varb == "moci" ~ "Cool ocean/\nstrong upwelling"),
+                                          predictor.value = -1,
+                                          lci = lci - (2 * estimate),
+                                          uci = uci - (2 * estimate),
+                                          estimate = estimate - (2 * estimate))) %>% 
+  mutate(predictor.label = factor(predictor.label, levels = c("Dry year", "Average rain year", "Wet year", "Pre-\nrestoration", "Post-\nrestoration", "Warm ocean/\nweak upwelling", "Average ocean\nconditions", "Cool ocean/\nstrong upwelling"))) %>% 
+  arrange(waterbird.group, alpha.code, predictor.value)
 
+saveRDS(combined_predictor_coefs_up_down, here("data/combined_predictor_coefs_up_down"))
 
 
 # overall trends ----
@@ -86,10 +118,10 @@ combined_trend_estimates <- bind_rows(hep_preds %>%
                                           rename("year" = study.year,
                                                  "abundance" = p75.abund) %>% 
                                           mutate(alpha.code = ifelse(alpha.code == "All", "All.wbird", alpha.code),
-                                                 common.name = case_when(alpha.code == "All.wbird" ~ "All open water birds", 
+                                                 common.name = case_when(alpha.code == "All.wbird" ~ "All waterbirds", 
                                                                          alpha.code == "SCAUP" ~ "Scaup spp.",
                                                                          TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name")),
-                                                 waterbird.group = "Open water birds")
+                                                 waterbird.group = "Water birds")
 ) %>% 
   select(year, waterbird.group, alpha.code, common.name, abundance, estimate, lci, uci) %>% 
   group_by(common.name) %>% 
@@ -120,14 +152,15 @@ sbird_rain_preds <- readRDS(here("data/sbird_rain_preds")) %>%
 
 
 wbird_fresh_preds <- readRDS(here("data/wbird_fresh_preds")) %>% 
-  mutate(common.name = case_when(alpha.code == "All" ~ "All open water birds",
+  mutate(common.name = case_when(alpha.code == "All" ~ "All Water birds",
                                  TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name"))) %>% 
   dplyr::select("year" = study.year, "predictor.value" = fresh, estimate, lci, uci, alpha.code, common.name) %>% 
-  mutate(waterbird.group = "Open water birds")
+  mutate(waterbird.group = "Water birds")
 
 
 rain_preds <- bind_rows(hep_rain_preds, sbird_rain_preds, wbird_fresh_preds) %>% 
   mutate(predictor.varb = "rain",
+         predictor.varb.label = "Response to rain",
          predictor.label = case_when(predictor.value == -1 ~ "Dry year",
                                      predictor.value == 0 ~ "Average rain",
                                      predictor.value == 1 ~ "Wet year"),
@@ -142,38 +175,31 @@ sbird_giac_preds <- readRDS(here("data/sbird_giac_preds")) %>%
 dplyr::select(year, "predictor.value" = giac.dummy, estimate, lci, uci, alpha.code, common.name) %>% 
   mutate(waterbird.group = "Shorebirds",
          predictor.varb = "giac",
-         predictor.label = case_when(predictor.value == 0 ~ "Pre-restoration",
-                                     predictor.value == 1 ~ "Post-restoration"),
-         predictor.label = factor(predictor.label, levels = c("Pre-restoration", "Post-restoration")))
+         predictor.varb.label = "Response to Giacomini restoration",
+         predictor.label = case_when(predictor.value == 0 ~ "Pre-\nrestoration",
+                                     predictor.value == 1 ~ "Post-\nrestoration"),
+         predictor.label = factor(predictor.label, levels = c("Pre-\nrestoration", "Post-\nrestoration")))
 
 # moci effects
 wbird_moci_preds <- readRDS(here("data/wbird_moci_preds")) %>% 
-  mutate(common.name = case_when(alpha.code == "ALL" ~ "All open water birds",
+  mutate(common.name = case_when(alpha.code == "ALL" ~ "All water birds",
                                  alpha.code == "SCAUP" ~ "Scaup spp.",
                                  TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name")))  %>% 
   dplyr::select("year" = study.year, "predictor.value" = moci, estimate, lci, uci, alpha.code, common.name) %>% 
-  mutate(waterbird.group = "Open water birds",
+  mutate(waterbird.group = "Water birds",
          predictor.varb = "moci",
-         predictor.label = case_when(predictor.value == -1 ~ "Cold ocean/strong upwelling",
-                                     predictor.value == 0 ~ "Average ocean conditions",
-                                     predictor.value == 1 ~ "Warm ocean/weak upwelling"),
-         predictor.label = factor(predictor.label, levels = c("Cold ocean/strong upwelling", "Average ocean conditions", "Warm ocean/weak upwelling")))
+         predictor.varb.label = "Response to ocean conditions",
+         predictor.label = case_when(predictor.value == -1 ~ "Cold ocean/\nstrong upwelling",
+                                     predictor.value == 0 ~ "Average ocean\nconditions",
+                                     predictor.value == 1 ~ "Warm ocean/\nweak upwelling"),
+         predictor.label = factor(predictor.label, levels = c("Cold ocean/\nstrong upwelling", "Average ocean\nconditions", "Warm ocean/\nweak upwelling")))
 
 
 
-all_preds_base <- bind_rows(rain_preds, sbird_giac_preds, wbird_moci_preds)
-
-
-combined_predictor_estimates <- all_preds_base %>% 
-  filter(predictor.value == 0) %>% 
-  select("base.estimate" = estimate, alpha.code, common.name, waterbird.group, predictor.varb) %>% 
-  full_join(all_preds_base) %>% 
-  mutate(abs.change.est = estimate - base.estimate,
-         abs.change.lci = lci - base.estimate,
-         abs.change.uci = uci - base.estimate,
-         per.change.est = ((estimate - base.estimate)/estimate)* 100,
-         per.change.lci = (estimate/lci) * per.change.est,
-         per.change.uci = (estimate/uci) * per.change.est)
+combined_predictor_estimates <- bind_rows(rain_preds, sbird_giac_preds, wbird_moci_preds) %>% 
+  mutate(predictor.label = factor(predictor.label, levels = c("Dry year", "Average rain", "Wet year", 
+                                                              "Pre-\nrestoration", "Post-\nrestoration", 
+                                                              "Cold ocean/\nstrong upwelling", "Average ocean\nconditions", "Warm ocean/\nweak upwelling")))
   
 
 saveRDS(combined_predictor_estimates, here("data/combined_predictor_estimates"))

@@ -4,18 +4,22 @@ library(tidyverse)
 library(here)
 library(birdnames)
 library(MASS)
+library(AICcmodavg)
 
-source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/ACR_waterbird_data_management/code/utils.r")
-source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/waterbird_data_work/code/utility/waterbird_utility_functions.R")
-source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/waterbird_analyses/Tomales_waterbird_trends_2020/code/analysis_utilities.R")
+#source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/ACR_waterbird_data_management/code/utils.r")
+#source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/waterbird_data_work/code/utility/waterbird_utility_functions.R")
+#source("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/waterbird_analyses/Tomales_waterbird_trends_2020/code/analysis_utilities.R")
 
 
 source(here("code/utilities.R"))
+source(here("code/prepare_predictors.R"))
+
 
 custom_bird_list <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/my_R_general/birdnames_support/data/custom_bird_list")
 
-
 wbird_keep_taxa <- c("AMCOGRSCLESCBUFF", "AMCO", "COGA", "Anseriformes", "Alcidae", "Gaviidae", "Pelecanidae", "Podicipediformes", "Sterninae", "Suliformes")
+
+wbird_analysis_spp = c("ALL_WBIRD", "BRAN", "CANG", "GADW", "AMWI", "MALL", "NOPI", "GWTE", "SCAUP", "SUSC", "BLSC", "BUFF", "COGO", "COME", "RBME", "RUDU", "PBGR", "HOGR", "RNGR", "EAGR", "WCGR", "AMCO", "FOTE", "RTLO", "PALO", "COLO", "BRAC", "PECO", "DCCO", "BRPE")
 
 options(scipen = 999)
 # data prep ----
@@ -37,93 +41,71 @@ exclude_dates <- as.Date(c("2017-12-16", # Beaufort 3-4
 ))
 
 # add study year, combine groupd spp for analysis, and recalculate the total number of birds for each species or species group each day
-spp_day_total <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/ACR_waterbird_data_management/data_files/working_rds/new_neg_machine_bay_total") %>% 
-  wbird_add_study_day() %>% # from waterbird_utility_functions.R
+wbird <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/ACR_waterbird_data_management/data_files/working_rds/new_neg_machine_bay_total") %>% 
+  add_study_year() %>%
   filter(!date %in% exclude_dates, study.year > 1991) %>% 
   bird_taxa_filter(wbird_keep_taxa) %>% 
   mutate(alpha.code = ifelse(alpha.code %in% c("GRSC", "LESC"), "SCAUP", alpha.code),
-         alpha.code = ifelse(alpha.code %in% c("WEGR", "CLGR"), "WCGR", alpha.code)) %>% 
+         alpha.code = ifelse(alpha.code %in% c("WEGR", "CLGR"), "WCGR", alpha.code)) 
+
+
+
+wbird_out <- wbird %>% 
+  mutate(alpha.code = "ALL_WBIRD") %>% 
+  bind_rows(wbird) %>% 
   group_by(study.year, date, alpha.code) %>% 
   summarise(bay.total = sum(bay.total)) %>% 
-  ungroup()
-
-
-# same as above but without SCAUP and WCGR lumped
-spp_day_total_ungrouped <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/ACR_waterbird_data_management/data_files/working_rds/new_neg_machine_bay_total") %>% 
-  wbird_add_study_day() %>% # from waterbird_utility_functions.R
-  filter(!date %in% exclude_dates, study.year > 1991) %>% 
-  bird_taxa_filter(wbird_keep_taxa) %>% 
-  mutate(alpha.code = ifelse(alpha.code == "ACGO", "CACG", alpha.code)) %>% 
-  group_by(study.year, date, alpha.code) %>% 
-  summarise(bay.total = sum(bay.total)) %>% 
-  ungroup()
-
-# add up all species each year (includes non trend species), combine with by-species data, and calculate the 75th percentile of the individual day totals for each species/species group each year
-spp_annual <- spp_day_total %>%
-  group_by(study.year, date) %>% 
-  summarise(bay.total = sum(bay.total)) %>% 
-  mutate(alpha.code = "All") %>% 
-  bind_rows(spp_day_total %>% dplyr::select(study.year, date, alpha.code, bay.total)) %>% 
+  ungroup() %>% 
+  filter(alpha.code %in% wbird_analysis_spp) %>% 
   group_by(study.year, alpha.code) %>% 
-  summarise(p75.abund = floor(quantile(bay.total, 0.75)))
-
-
-# list of species detected >= 20 years. created by C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/waterbird_analyses/Tomales_waterbird_trends_2020/code/analysis1_prepare_data.R
-wbird_trend_spp <- readRDS(here("data/wbird_trend_spp")) %>% 
-  mutate(alpha.code = ifelse(alpha.code == "ALL", "All", alpha.code))
+  summarise(p75.abund = floor(quantile(bay.total, 0.75))) %>% 
+  ungroup()
 
 
 # fill in 0 for years when spp not detected
-spp_annual_full <- spp_annual %>%
-  filter(alpha.code %in% wbird_trend_spp$alpha.code) %>% 
+wbird_out_full <- wbird_out %>%
   pivot_wider(id_cols = alpha.code, names_from = study.year, values_from = p75.abund) %>% 
   pivot_longer(-alpha.code, names_to = "study.year", values_to = "p75.abund") %>% 
   mutate(p75.abund = ifelse(is.na(p75.abund), 0, p75.abund),
-         study.year = as.numeric(study.year))
+         study.year = as.numeric(study.year)) %>% 
+  left_join(mean_north_moci) %>% 
+  left_join(lacr) %>% 
+  filter(study.year >= 1995)
 
+# fit models ----
 
-# join bird data with predictors
-spp_annual_full_preds <- spp_annual_full %>% 
-  full_join(., readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/waterbird_analyses/Tomales_waterbird_trends_2020/data_files/predictors") %>% 
-              rename(moci = mean.moci,
-                     fresh = annual.freshwater) %>% 
-              mutate(moci = scale(moci, scale = TRUE, center = TRUE)[,1],
-                     fresh = scale(fresh, scale = TRUE, center = TRUE)[,1])) %>% 
-  data.frame()
+zmaxit = 400
 
-
-#saveRDS(spp_annual_full_preds, here("data_files/spp_annual_full_preds"))
-
-
-fit_wbird_mod <- function(zspp) {
-  zspp_annual <- spp_annual_full_preds %>% 
+fit_wbird_mod_set <- function(zspp) {
+  zspp_annual <- wbird_out_full %>% 
     filter(alpha.code == zspp)
   # trend and both environmental
-  year2_fresh_moci <- glm.nb(p75.abund ~ poly(study.year, 2) + fresh + moci, data = zspp_annual)
+  mods <- list(
+  year2_flow_moci = glm.nb(p75.abund ~ poly(study.year, 2) + flow + moci, data = zspp_annual, maxit = zmaxit),
+  year2_flow = glm.nb(p75.abund ~ poly(study.year, 2) + flow, data = zspp_annual, maxit = zmaxit),
+  year2_moci = glm.nb(p75.abund ~ poly(study.year, 2) + moci, data = zspp_annual, maxit = zmaxit),
   
-  return(year2_fresh_moci)
+  year_flow_moci = glm.nb(p75.abund ~ study.year + flow + moci, data = zspp_annual, maxit = zmaxit),
+  year_flow = glm.nb(p75.abund ~ study.year + flow, data = zspp_annual, maxit = zmaxit),
+  year_moci = glm.nb(p75.abund ~ study.year + moci, data = zspp_annual, maxit = zmaxit),
+  
+  year = glm.nb(p75.abund ~ study.year, data = zspp_annual, maxit = zmaxit),
+  flow = glm.nb(p75.abund ~ flow, data = zspp_annual, maxit = zmaxit),
+  moci = glm.nb(p75.abund ~ moci, data = zspp_annual, maxit = zmaxit),
+  
+  intercept = glm.nb(p75.abund ~ 1, data = zspp_annual, maxit = zmaxit)
+  )
+  return(mods)
   
 }
 
-all_spp_mod<- map(wbird_trend_spp$alpha.code, fit_wbird_mod)
 
-names(all_spp_mod) <- wbird_trend_spp$alpha.code
+wbird_mods <- map(wbird_analysis_spp, fit_wbird_mod_set)
 
-# saveRDS(all_spp_mods, here("fitted_models/all_spp_mods"))
-
-
-# model coeficients and 95% CI ----
+names(wbird_mods) <- wbird_analysis_spp
 
 
-coef_ci <- map2_df(all_spp_mod, names(all_spp_mod), get_coefs_cis)
-saveRDS(coef_ci, "data/wbird_coef_ci")
-
-
-
-
-
-# wbird_mod_preds adapted from mod_predictions_link in C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/core_monitoring_research/water_birds/waterbird_analyses/Tomales_waterbird_trends_2020/code/analysis_utilities.R
-
+# model averaged estimates ----
 
 #' get_wbird_mod_preds
 #' 
@@ -136,130 +118,29 @@ saveRDS(coef_ci, "data/wbird_coef_ci")
 #' @export
 #'
 #' @examples
-get_wbird_mod_preds <- function(zmod, zmod.name) {
+wbird_mod_avg_predicter <- function(zspp) {
   
-  ana_table <- spp_annual_full_preds %>% 
-    filter(alpha.code == zmod.name)
+  spp_mods <- wbird_mods[[zspp]]
   
-  znewdat = data.frame(study.year = seq(min(ana_table$study.year), max(ana_table$study.year)),
-                       fresh = mean(ana_table$fresh),
-                       moci = mean(ana_table$moci))
+  znewdat = wbird_out_full %>% 
+    filter(alpha.code == zspp) %>% 
+    dplyr::select(study.year, alpha.code, p75.abund) %>% 
+    mutate(flow = 0,
+           moci = 0)
+    
+     
   
-  ilink <- family(zmod)$linkinv
-  best_pred = predict(zmod, znewdat, se.fit=TRUE, type='link') %>% 
+  all_best_pred = modavgPred(spp_mods, names(spp_mods), znewdat, se.fit=TRUE, type='response') %>% 
     data.frame() %>% 
-    bind_cols(znewdat) %>% 
-    ungroup() %>% 
-    mutate(estimate = ilink(fit),
-           lci = ilink(fit - (1.96 * se.fit)),
-           uci = ilink(fit + (1.96 * se.fit))) %>% 
-    full_join(ana_table %>% dplyr::select(study.year, alpha.code, p75.abund)) %>% 
-    mutate(alpha.code = ifelse(is.na(alpha.code), zmod.name, alpha.code))
+    dplyr::select(-type, -contains("matrix")) %>% 
+    cbind(znewdat)
+  
+  return(all_best_pred)
   
 }
 
 
-wbird_preds <- map2_df(all_spp_mod, names(all_spp_mod), get_wbird_mod_preds)
-
-
-saveRDS(wbird_preds, here("data/wbird_preds"))
-
-#' get_wbird_fresh_preds
-#' 
-#' calculate model estimates (predictions) for zspp species and zmod model on the scale of the link function
-#'
-#' @param zspp 
-#' @param zmod 
-#'
-#' @return data frame
-#' @export
-#'
-#' @examples
-get_wbird_fresh_preds <- function(zmod, zmod.name) {
-  
-  ana_table <- spp_annual_full_preds %>% 
-    filter(alpha.code == zmod.name)
-  
-#  znewdat = data.frame(study.year = mean(ana_table$study.year),
-#                       fresh = seq(min(ana_table$fresh), max(ana_table$fresh), length.out = 10),
-#                       moci = mean(ana_table$moci))
+wbird_preds <- map_df(wbird_analysis_spp, wbird_mod_avg_predicter)
   
   
-  #znewdat = data.frame(study.year = floor(mean(ana_table$study.year)),
-  #                     fresh = c(mean(ana_table$fresh) - (0.5 * sd(ana_table$fresh)),
-  #                               mean(ana_table$fresh) + (0.5 * sd(ana_table$fresh))),
-  #                     moci = mean(ana_table$moci))
-  
-  #znewdat = data.frame(study.year = floor(mean(ana_table$study.year)),
-  #                     fresh = c(quantile(ana_table$fresh, 0.25),
-  #                               quantile(ana_table$fresh, 0.75)),
-  #                     moci = mean(ana_table$moci))
-  
-  znewdat = data.frame(study.year = floor(mean(ana_table$study.year)),
-                       fresh = c(-1, 0, 1),
-                       moci = 0)
-  
-  
-  ilink <- family(zmod)$linkinv
-  best_pred = predict(zmod, znewdat, se.fit=TRUE, type='link') %>% 
-    data.frame() %>% 
-    bind_cols(znewdat) %>% 
-    ungroup() %>% 
-    mutate(estimate = ilink(fit),
-           lci = ilink(fit - (1.96 * se.fit)),
-           uci = ilink(fit + (1.96 * se.fit)),
-           alpha.code = zmod.name)
-  
-}
-
-
-wbird_fresh_preds <- map2_df(all_spp_mod, names(all_spp_mod), get_wbird_fresh_preds)
-
-saveRDS(wbird_fresh_preds, here("data/wbird_fresh_preds"))
-
-
-#' get_wbird_moci_preds
-#' 
-#' calculate model estimates (predictions) for zspp species and zmod model on the scale of the link function
-#'
-#' @param zspp 
-#' @param zmod 
-#'
-#' @return data frame
-#' @export
-#'
-#' @examples
-get_wbird_moci_preds <- function(zmod, zmod.name) {
-  
-  ana_table <- spp_annual_full_preds %>% 
-    filter(alpha.code == zmod.name)
-  
-# zmoci = seq(min(ana_table$moci), max(ana_table$moci), length.out = 10)
-  
-  #zmoci = seq(quantile(ana_table$moci, 0.25), quantile(ana_table$moci, 0.75))
-  
-  zmoci = c(-1, 0, 1)
-  
-  znewdat = data.frame(study.year = floor(mean(ana_table$study.year)),
-                       fresh = 0,
-                       moci = zmoci)
-  
-
-  
-    ilink <- family(zmod)$linkinv
-  best_pred = predict(zmod, znewdat, se.fit=TRUE, type='link') %>% 
-    data.frame() %>% 
-    bind_cols(znewdat) %>% 
-    ungroup() %>% 
-    mutate(estimate = ilink(fit),
-           lci = ilink(fit - (1.96 * se.fit)),
-           uci = ilink(fit + (1.96 * se.fit)),
-           alpha.code = zmod.name) 
-  
-}
-
-
-wbird_moci_preds <- map2_df(all_spp_mod, names(all_spp_mod), get_wbird_moci_preds)
-
-saveRDS(wbird_moci_preds, here("data/wbird_moci_preds"))
-
+saveRDS(wbird_preds, here("model_objects/wbird_preds"))

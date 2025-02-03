@@ -1,0 +1,388 @@
+---
+title: "Shorebird and Waterbird abundance on Tomales Bay"
+output: word_document
+date: "`r Sys.Date()`"
+---
+
+
+```{r setup, echo = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(fig.width=8, fig.height=8, fig.align = "left") 
+```
+
+
+```{r}
+
+
+library(tidyverse)
+library(here)
+library(birdnames)
+
+
+custom_bird_list <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/my_R_general/birdnames_support/data/custom_bird_list")
+
+source(here("code/utilities.R"))
+
+options(scipen = 999)
+
+```
+
+## Monitoring birds on Tomales Bay
+
+
+Monitoring species populations provides critical information to identify imperiled species, evaluate current or past management, prioritize new conservation measures.  
+
+Since the 1990's, Audubon Canyon Ranch has monitored wintering shorebirds waterbirds on Tomales Bay. All of these birds are closely associated with water or wetlands for most of their life histories. Shorebirds (e.g., sandpipers, plovers, godwits) mostly use the tidal wetlands and mudflats on the bay, while waterbirds (e.g., loons, grebes, cormorants, waterfowl) use the open water habitats on the bay .     
+
+
+The data from these monitoring programs was recently analyzed and published:
+
+Warnock, N., Jennings, S., Kelly, J.P., Condeso, T.E. and Lumpkin, D., 2021. Declining wintering shorebird populations at a temperate estuary in California: A 30-year perspective. The Condor, 123(1), p.duaa060. https://academic.oup.com/condor/article/123/1/duaa060/6132586
+
+Warnock, N., Jennings, S., Kelly, J.P., Condeso, T.E., Lumpkin, D., Baty, T. In prep. Decadal trends of (wintering) waterbirds at a coastal California site – a 30-year perspective. 
+
+
+Here, we provide an update to the results of these papers, showing the most recent years of data. As in the papers, we estimate abundance while accounting for local environmental factors. The numbers we report here are slightly different than those in our papers because of the additional data and a slightly different analysis method. We show plots for all shorebirds and all waterbirds, and for several individual species. In the figures below, the black line represents the estimated average abundance, and the gray area represents an estimate of error (95% confidence interval) for this estimated mean, and the dots show the raw abundance value for each year.
+
+
+## Overall trends and general conclusions  
+
+```{r}
+
+combined_trend_estimates <- bind_rows(readRDS(here("model_objects/wbird_preds")),
+                                      readRDS(here("model_objects/sbird_preds"))) %>% 
+  mutate(common.name = case_when(alpha.code == "ALL_WBIRD" ~ "All waterbirds combined",
+                                 alpha.code == "ALL_SBIRD" ~ "All shorebirds combined",
+                                 TRUE ~ translate_bird_names(alpha.code, "alpha.code", "common.name"))) %>% 
+  group_by(common.name) %>% 
+  mutate(upper.y = 1.1 * max(upper.CL, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  filter(study.year >= 1990)
+
+
+spp_percent_change_overall <- combined_trend_estimates %>%  
+  group_by(common.name) %>% 
+  mutate(which.year = case_when(study.year == min(study.year) ~ "min.year",
+                                study.year == max(study.year) ~ "max.year"),
+         first.year = min(study.year)) %>% 
+  ungroup() %>% 
+  filter(!is.na(which.year)) %>% 
+  pivot_wider(id_cols = c(alpha.code, common.name, first.year), values_from = mod.avg.pred, names_from = which.year) %>% 
+  mutate(percent.change = 100 * ((max.year/min.year)-1),
+         percent.change = round(percent.change, 0),
+         change.direction = ifelse(sign(percent.change) < 0, "decreased", "increased"),
+         across(contains(".year"), ~floor(.)),
+         alpha.code = ifelse(grepl("reeding", common.name), paste("b.", alpha.code, sep = ""), alpha.code))
+
+
+spp_texter <- function(zspp) {
+  
+  # Filter the data frame for the specific species
+  spp_df <- filter(spp_percent_change_overall, alpha.code == zspp)
+  
+  # Format numbers greater than 999 with commas
+  spp_df <- spp_df %>%
+    mutate(across(c(min.year, max.year), scales::comma))
+  
+  # Create the text output
+  spp_text <- paste0(
+    paste("For ", spp_df$common.name, ", abundance has ", spp_df$change.direction, " ", abs(spp_df$percent.change), "% since ", spp_df$first.year, ", from ", spp_df$min.year, " to ", spp_df$max.year,  ".", sep = "")
+  )
+  
+  return(spp_text)
+}
+  
+```
+  
+
+  
+We'll start out looking at long term trends for all Shorebirds combined and all waterbirds combined. We see distinctly different trajectories of abundance over the last ~30 years for each group of birds.
+
+`r spp_texter("ALL_SBIRD")`
+`r spp_texter("ALL_WBIRD")`    
+
+
+
+```{r}
+
+trend_plotter(zspp = c("ALL_SBIRD", "ALL_WBIRD"), include.raw = TRUE, include.spp.title = FALSE) +
+  facet_wrap(~common.name, scales = "free_y", ncol = 1)
+
+ggsave(here("figures/sbird_wbird_combined_trend.png"), dpi = 300, width = 8)
+```
+  
+  
+As reported in our published papers, the causes for these population changes are a combination of local, regional and continent-wide factors. Local environmental conditions at Tomales Bay explain some of the variation in bird abundance, especially at shorter time scales, but Tomales Bay provides relatively large, intact, and undisturbed habitat for these birds and local factors seem relatively unimportant drivers of long term trends. Birds generally, and waterbirds specifically, are highly mobile and can move locations to find suitable habitats. However, many of these species are constrained by the tight schedules and other requirements of annual migrations. These species rely on critical overwintering and stopover food sources in order to make it to their northern breeding ranges with enough energy reserves to raise young. Changes to the availability of food and quality of sheltering habitat all along these migration routes is likely the leading cause of some of the declines we have observed.   
+
+
+## Taking a closer look at some individual species  
+
+We have also analyzed the trends of several individual species. Species specific trends provide more information than the overall group trends, and can help identify which species may warrant conservation action. 
+
+# Shorebirds
+
+
+
+`r spp_texter("DUNL")`  
+```{r}
+trend_plotter("DUNL")
+
+```
+
+
+
+# Shorebirds
+
+`r spp_texter("BBPL")`  
+```{r}
+trend_plotter("BBPL")
+```
+
+
+`r spp_texter("BLTU")`  
+```{r}
+trend_plotter("BLTU")
+```
+
+ 
+`r spp_texter("DOSP")`  
+```{r}
+trend_plotter("DOSP")
+```
+
+
+
+`r spp_texter("DUNL")`  
+```{r}
+trend_plotter("DUNL")
+```
+  
+
+`r spp_texter("KILL")`    
+```{r}
+trend_plotter("KILL")
+```
+
+
+`r spp_texter("LESA")`  
+```{r}
+trend_plotter("LESA")
+```
+  
+
+`r spp_texter("MAGO")`    
+```{r}
+trend_plotter("MAGO")
+```
+  
+  
+
+`r spp_texter("SAND")`    
+```{r}
+trend_plotter("SAND")
+```
+  
+  
+`r spp_texter("SEPL")`  
+```{r}
+trend_plotter("SEPL")
+```
+  
+
+`r spp_texter("WESA")`    
+```{r}
+trend_plotter("WESA")
+```
+  
+
+`r spp_texter("WILL")`    
+```{r}
+trend_plotter("WILL")
+```
+  
+
+`r spp_texter("YELL")`    
+```{r}
+trend_plotter("YELL")
+```
+  
+  
+# Open water birds
+
+
+`r spp_texter("AMCO")`  
+```{r}
+trend_plotter("AMCO")
+```
+
+
+`r spp_texter("AMWI")`  
+```{r}
+trend_plotter("AMWI")
+```
+
+
+
+`r spp_texter("BLSC")`  
+```{r}
+trend_plotter("BLSC")
+```
+
+  
+
+`r spp_texter("BRAC")`    
+```{r}
+trend_plotter("BRAC")
+```
+
+
+`r spp_texter("BRAN")`  
+```{r}
+trend_plotter("BRAN")
+```
+  
+
+`r spp_texter("BRPE")`    
+```{r}
+trend_plotter("BRPE")
+```
+  
+
+`r spp_texter("BUFF")`    
+```{r}
+trend_plotter("BUFF")
+```
+  
+
+`r spp_texter("CANG")`    
+```{r}
+trend_plotter("CANG")
+```
+  
+
+`r spp_texter("COGO")`    
+```{r}
+trend_plotter("COGO")
+```
+  
+
+`r spp_texter("COLO")`    
+```{r}
+trend_plotter("COLO")
+```
+  
+  
+
+`r spp_texter("COME")`    
+```{r}
+trend_plotter("COME")
+```
+  
+
+`r spp_texter("DCCO")`    
+```{r}
+trend_plotter("DCCO")
+```
+
+  
+
+`r spp_texter("EAGR")`  
+```{r}
+trend_plotter("EAGR")
+```
+  
+
+`r spp_texter("FOTE")`    
+```{r}
+trend_plotter("FOTE")
+```
+  
+
+`r spp_texter("GADW")`    
+```{r}
+trend_plotter("GADW")
+```
+  
+
+`r spp_texter("GWTE")`    
+```{r}
+trend_plotter("GWTE")
+```
+  
+
+`r spp_texter("HOGR")`    
+```{r}
+trend_plotter("HOGR")
+```
+  
+
+`r spp_texter("MALL")`    
+```{r}
+trend_plotter("MALL")
+```
+
+  
+
+`r spp_texter("NOPI")`   
+```{r}
+trend_plotter("NOPI")
+```
+  
+
+`r spp_texter("PALO")`    
+```{r}
+trend_plotter("PALO")
+```
+  
+
+`r spp_texter("PBGR")`    
+```{r}
+trend_plotter("PBGR")
+```
+  
+
+`r spp_texter("PECO")`    
+```{r}
+trend_plotter("PECO")
+```
+  
+
+`r spp_texter("RBME")`    
+```{r}
+trend_plotter("RBME")
+```
+
+
+`r spp_texter("RNGR")`  
+```{r}
+trend_plotter("RNGR")
+```
+  
+
+`r spp_texter("RTLO")`    
+```{r}
+trend_plotter("RTLO")
+```
+  
+
+`r spp_texter("RUDU")`    
+```{r}
+trend_plotter("RUDU")
+```
+  
+
+`r spp_texter("SCAUP")`    
+```{r}
+trend_plotter("SCAUP")
+```
+  
+
+`r spp_texter("SUSC")`    
+```{r}
+trend_plotter("SUSC")
+```
+  
+
+`r spp_texter("WCGR")`    
+```{r}
+trend_plotter("WCGR")

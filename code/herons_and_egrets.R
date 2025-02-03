@@ -38,7 +38,7 @@ hep_abund <- readRDS(here("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ran
   mutate(common.name = translate_bird_names(species, "alpha.code", "common.name")) %>% 
   full_join(hep_sites)%>% 
   cut_never_nested() %>% 
-  filter(peakactvnsts > 0, year >= 1990)
+  filter(peakactvnsts > 0, year >= 1990, year != 2020)
 
 calculate_tot_nests <- function(df) {
   df <- df %>% 

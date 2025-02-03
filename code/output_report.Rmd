@@ -23,6 +23,8 @@ library(birdnames)
 
 custom_bird_list <- readRDS("C:/Users/scott.jennings/OneDrive - Audubon Canyon Ranch/Projects/my_R_general/birdnames_support/data/custom_bird_list")
 
+source(here("code/utilities.R"))
+
 options(scipen = 999)
 
 ```
@@ -59,54 +61,32 @@ Here, we provide an update to the results of these papers, showing the most rece
 combined_trend_estimates <- readRDS(here("data/combined_trend_estimates")) %>% 
   group_by(common.name, waterbird.group) %>% 
   mutate(upper.y = 1.1 * max(uci, na.rm = TRUE)) %>% 
-  ungroup()
+  ungroup() %>% 
+  mutate(alpha.code = ifelse(grepl("reeding", common.name), paste("b.", alpha.code, sep = ""), alpha.code))
+
+spp_percent_change_overall <- combined_trend_estimates %>%  
+  group_by(common.name, waterbird.group) %>% 
+  mutate(which.year = case_when(year == min(year) ~ "min.year",
+                                year == max(year) ~ "max.year")) %>% 
+  ungroup() %>% 
+  filter(!is.na(which.year)) %>% 
+  pivot_wider(id_cols = c(waterbird.group, alpha.code, common.name), values_from = estimate, names_from = which.year) %>% 
+  mutate(percent.change = 100 * ((max.year/min.year)-1),
+         percent.change = round(percent.change, 0),
+         change.direction = ifelse(sign(percent.change) < 0, "decreased", "increased"),
+         common.name = ifelse(grepl("All.", alpha.code), tolower(common.name), common.name),
+         common.name = gsub("Breeding", "breeding", common.name),
+         per.change.text = paste("abundance has ", change.direction, " ", abs(percent.change), "%", sep = ""),
+         per.change.text.sentence = paste("For ", common.name, ", abundance has ", change.direction, " ", abs(percent.change), "%.", sep = ""),
+         across(contains(".year"), ~floor(.)),
+         alpha.code = ifelse(grepl("reeding", common.name), paste("b.", alpha.code, sep = ""), alpha.code))
+
   
 ```
   
+
   
-```{r}
-
-#' trend_plotter
-#' 
-#' @description
-#' plot estimated trend line for 1 or more species. Will facet_wrap if more than 1 species. Can optionally include raw data
-#'
-#' @param zspp character string for 4-letted species codes to plot
-#' @param include.raw TRUE (default) to include points for raw data
-#'
-#' @return
-#' @export
-#'
-#' @examples
-trend_plotter <- function(zspp, include.raw = TRUE) {
-  
-zpred <- filter(combined_trend_estimates, alpha.code %in% zspp)
-  
-#ymax = ifelse(max(zpred$abundance) > max(zpred$uci), max(zpred$abundance), max(zpred$uci))
-
-zplot <- zpred %>% 
-  ggplot(aes(x = year, y = estimate)) +
-  geom_line() +
-  geom_ribbon(aes(ymin=lci,ymax=uci),alpha=0.3) +
-  theme_bw() +
-  scale_y_continuous(breaks = scales::pretty_breaks(8), limits = c(0, NA)) +
-  scale_x_continuous(breaks = scales::pretty_breaks(8), limits = c(1990, NA)) +
-  xlab("Year") +
-  ylab("Abundance")
-
-if(include.raw == TRUE) {
-zplot <- zplot   +
-  geom_point(aes(x = year, y = abundance))
-}
-
-return(zplot)
-}
-
-
-```  
-  
-  
-We'll start out looking at long term trends for each of the three broad categories of waterbirds. In the figures below, the black line represents the estimated average abundance, and the gray area represents an estimate of error (95% confidence interval) for this estimated mean. We see distinctly different trajectories of abundance over the last ~30 years for each group of birds. For waterbirds that mostly use open water habitats, there were about 22,000 individuals on the bay in 1992, that number rose to a little under 29,000 around 2005, but has since dropped to around 19,000. Shorebird species declined steadily from about 15,000 in 1989 to just over 4,000 today. The Giacomini restoration project was associated with an increase of about 2,500 birds, but this increase was not enough to reverse the overall negative trend. For Great Blue Heron and Great Egret nesting abundance, the long term trend follows the opposite pattern we observed for open water birds. There were about 140 nests along Tomales Bay in 1991, falling to just under 50 around 2007, and then increasing to around 105 today.   
+We'll start out looking at long term trends for each of the three broad categories of waterbirds. In the figures below, the black line represents the estimated average abundance, and the gray area represents an estimate of error (95% confidence interval) for this estimated mean. We see distinctly different trajectories of abundance over the last ~30 years for each group of birds. For waterbirds that mostly use open water habitats,  `r filter(spp_percent_change_overall, alpha.code == "All.wbird")$per.change.text` since 1992, from  `r filter(spp_percent_change_overall, alpha.code == "All.wbird")$min.year` to  `r filter(spp_percent_change_overall, alpha.code == "All.wbird")$max.year`. Shorebird species declined steadily,  `r filter(spp_percent_change_overall, alpha.code == "All.sbird")$per.change.text` since  from `r filter(spp_percent_change_overall, alpha.code == "All.sbird")$min.year` to `r filter(spp_percent_change_overall, alpha.code == "All.sbird")$last.year`. For Great Blue Heron and Great Egret nesting along Tomales Bay, abundance has `r filter(spp_percent_change_overall, alpha.code == "All.hep")$per.change.text`, from `r filter(spp_percent_change_overall, alpha.code == "All.hep")$min.year` in 1991 to `r filter(spp_percent_change_overall, alpha.code == "All.hep")$max.year` nests today.   
  
 
 ```{r}
@@ -127,151 +107,73 @@ As reported in our published papers, the causes for these population changes are
 
 
 
-```{r eval = FALSE}
-
-
-combined_predictor_coefs <- readRDS(here("data/combined_predictor_coefs")) %>% 
-  mutate(predictor.varb.label = case_when(varb == "rain" ~ "Response to rain",
-                                          varb == "giac" ~ "Response to Giacomini restoration",
-                                          varb == "moci" ~ "Response to ocean conditions"),
-         zero.line.text = case_when(varb == "rain" ~ "0 = average rain year",
-                                          varb == "giac" ~ "0 = before restoration",
-                                          varb == "moci" ~ "0 = average ocean conditions"))
-
-combined_predictor_estimates <- bind_rows(combined_predictor_coefs %>% 
-                                                mutate(predictor.label = case_when(varb == "rain" ~ "Wet year",
-                                                                                   varb == "giac" ~ "Post-restoration",
-                                                                                   varb == "moci" ~ "Warm ocean/weak upwelling"),
-                                                       predictor.label.vjust = 1),
-                                              combined_predictor_coefs %>% 
-                                                filter(varb != "giac") %>% 
-                                                mutate(across(contains("per.change"), ~. * -1),
-                                                       predictor.label = case_when(varb == "rain" ~ "Dry year",
-                                                                                   varb == "moci" ~ "Cool ocean/strong upwelling"),
-                                                       predictor.label.vjust = -0.5)) %>% 
-  mutate(predictor.label = factor(predictor.label, levels = c("Wet year", "Dry year", "Post-restoration", "Warm ocean/weak upwelling", "Cool ocean/strong upwelling")),
-         direction.text = ifelse(per.change.estimate < 0, "fewer birds", "more birds"),
-         zcolor = ifelse(per.change.estimate < 0, brewer.pal(11, "RdBu")[2], brewer.pal(11, "RdBu")[10]),
-         per.change.out = paste(round(abs(per.change.estimate), 1), "%", sep = ""),
-         lab.text = paste(predictor.label, "\n", per.change.out, direction.text, sep = ""))
-```
-
 ```{r}
-combined_predictor_estimates <- readRDS(here("data/combined_predictor_estimates")) %>% 
-  mutate(predictor.varb.label = case_when(predictor.varb == "rain" ~ "Response to rain",
-                                          predictor.varb == "giac" ~ "Response to Giacomini restoration",
-                                          predictor.varb == "moci" ~ "Response to ocean conditions"),
-         predictor.label = factor(predictor.label, levels = c("Dry year", "Average rain", "Wet year", 
-                                                              "Pre-\nrestoration", "Post-\nrestoration", 
-                                                              "Cold ocean/\nstrong upwelling", "Average ocean\nconditions", "Warm ocean/\nweak upwelling")))
+combined_predictors <- readRDS(here("data/combined_predictor_coefs_up_down")) %>% 
+  mutate(alpha.code = ifelse(grepl("reeding", common.name), paste("b.", alpha.code, sep = ""), alpha.code))
 
+#combined_predictors <- readRDS(here("data/combined_predictor_estimates"))
 ```
 
-
-```{r}
-predictor_est_plotter <- function(pred_df) {
-  
-  zhjust = -.25
-    effects_plot <- pred_df  %>% 
-  ggplot(aes(group = waterbird.group)) + 
-    geom_line(aes(y = estimate, x = predictor.label)) +
-    geom_ribbon(aes(x = predictor.label, ymin = lci, ymax = uci), alpha = 0.25) +
-    theme_bw() +
-    guides(color = "none") +
-  scale_y_continuous(breaks = scales::pretty_breaks(8)) +
-    labs(x = "",
-         y = "Abundance",
-         fill = "",
-         title = pred_df$predictor.varb.label) + 
-   scale_x_discrete(expand=c(0.05, 0.05))
-    return(effects_plot)
-}
-```
 
 
 
 Heron and egret nest abundance at Tomales Bay is higher in years with more rain. Across the entire North SF Bay region, herons and egrets are generally less abundant in very wet years. However, along Tomales Bay there may be a greater diversity of intact, available habitats that provide greater foraging opportunities in wetter years. In contrast, most open water birds and shorebird species are less abundant in wetter years. This is probably because their prey on become harder to find when there is a lot of freshwater runoff and sedimentation into the bay.
    
 ```{r}
-combined_predictor_estimates %>%
+combined_predictors %>%
             filter(grepl("All", alpha.code), predictor.varb == "rain") %>% 
             predictor_est_plotter() +
       facet_wrap(~waterbird.group, scales = "free_y", ncol = 1)
 
+ggsave(here("figures/all_combined_rain_effect.png"), dpi = 300, width = 8)
 ```
 
 For the Giacomini Wetland restoration, we only looked at the response of shorebird species, since they are the most likely species to use the new habitat there. Most shorebird species increased following the restoration. The three species that decreased don't generally use the types of habitats available in Giacomini wetland, so those declines may be associated with some other change in the environment that happened around the same time as the restoration.  
   
 ```{r fig.height=6}
-          combined_predictor_estimates %>%
+          combined_predictors %>%
             filter(grepl("All", alpha.code), predictor.varb %in% c("giac")) %>% 
             predictor_est_plotter()  +
       facet_wrap(~waterbird.group, scales = "free_y", ncol = 1)
+
+
+ggsave(here("figures/all_combined_giacomini_effect.png"), dpi = 300, width = 8)
 ```  
   
   
 We only considered the effect of ocean conditions on the abundance of open water birds. Most of these species are more abundant on Tomales Bay in years when the ocean is colder and there is more upwelling. Tidal action and other currents can transport nutrients from the ocean into the bay, and this transport is stronger when there is stronger upwelling. Species that were less abundant during stronger upwelling years may have moved outside the bay to take advantage of foraging opportunities in the ocean.
 ```{r fig.height=6}
-combined_predictor_estimates %>%
+combined_predictors %>%
             filter(grepl("All", alpha.code), predictor.varb %in% c("moci")) %>% 
             predictor_est_plotter()  +
       facet_wrap(~waterbird.group, scales = "free_y", ncol = 1)
+
+
+ggsave(here("figures/all_combined_moci_effect.png"), dpi = 300, width = 8)
 ```
 
 
 ```{r eval = FALSE, fig.width=8}
-plot_grid(combined_predictor_estimates %>%
+plot_grid(combined_predictors %>%
             filter(grepl("All", alpha.code), predictor.varb == "rain") %>% 
             predictor_est_plotter() +
             facet_wrap(~waterbird.group, scales = "free_y", ncol = 1),
-          plot_grid(combined_predictor_estimates %>%
+          plot_grid(combined_predictors %>%
                       filter(grepl("All", alpha.code), predictor.varb == "giac") %>%
                       predictor_est_plotter() +
-                      facet_wrap(~waterbird.group, scales = "free_y", ncol = 1),
-                    combined_predictor_estimates %>%
+                      facet_wrap(~waterbird.group, scales = "free_y", ncol = 1) +
+                      labs(y = ""),
+                    combined_predictors %>%
                       filter(grepl("All", alpha.code), predictor.varb == "moci") %>%
                       predictor_est_plotter() +
-                      facet_wrap(~waterbird.group, scales = "free_y", ncol = 1),
+                      facet_wrap(~waterbird.group, scales = "free_y", ncol = 1) +
+                      labs(y = ""),
                     rel_heights = c(1, 1),
                     ncol = 1),
           ncol = 2)
 ```
 
 
-
-```{r}
-single_species_plotter <- function(zalpha.code) {
-  
-  common.name = filter(combined_trend_estimates, alpha.code == zalpha.code) %>% 
-    distinct(common.name)
-
-zplot <- plot_grid(trend_plotter(zalpha.code) +
-            labs(title = paste(common.name, "\n\nPopulation change over time", sep = ""),
-                 x = "",
-                 y = "Abundance") + 
-            theme(strip.background = element_blank(),
-                  strip.text.x = element_blank()),
-          combined_predictor_estimates %>%
-            filter(alpha.code == zalpha.code) %>% 
-            predictor_est_plotter() +
-            labs(title = "Effect of local variables") +
-            facet_wrap(~predictor.varb.label, nrow = 1, scales = "free_x"),
-          ncol = 1,
-          rel_heights = c(3, 3),
-          align = "v")
-  
-  
-zpath = as.character(here(paste("figures/", zalpha.code, "_combined.png", sep = "")))
-
-save_plot(zpath, zplot, dpi = 300, base_height = 8, base_width = 8)
-
-
-return(zplot)
-
-}
-
-
-```
 
 
 
@@ -287,29 +189,6 @@ Great Blue Herons and Great Egrets show slightly different trend patterns. Great
 
 trend_plotter(zspp = c("GBHE", "GREG"))
 
-```
-
-
-```{r eval = FALSE}
-# We also have heron and egret monitoring data for the rest of the north SF Bay Area. How does Tomales Bay compare to trends across larger areas? We can summarize our monitoring data to show all nesting colonies along the outer Pacific coast of Marin and Sonoma Counties, and all colonies in the entire study area. For Great Blue Heron, 
-hep_preds %>% 
-  filter(!subregion %in% c("OUCnoTBAY"), species %in% c("GBHE", "GREG")) %>%
-  mutate(subreg.group = ifelse(subregion == "All", as.character(subreg.name), "Marin Co."),
-         subreg.group = factor(subreg.group, levels = c("Marin Co.", "Entire study area"))) %>% 
-  ggplot() +
-  geom_line(aes(x = year, y = estimate, color = subreg.name)) +
-  geom_ribbon(aes(x = year, ymin = lci, ymax = uci, fill = subreg.name), alpha = 0.25) +
-  geom_point(aes(x = year, y = tot.nests, color = subreg.name))  + 
-  facet_grid(subreg.group~common.name, scales = "free_y") +
-  labs(y = "Nest abundance",
-       x = "Year",
-       title = "",
-       color = "",
-       fill = "") +
-  theme_bw() +
-  theme(text = element_text(size=8))
-
-ggsave(here("figures/HEP_tbay_ouc_all_trends.png"), dpi = 300, width = 8)
 ```
 
 
@@ -360,13 +239,11 @@ single_species_plotter("BBPL")
 single_species_plotter("BLTU")
 ```
 
-```{r}
-single_species_plotter("BLTU")
-```
  
 ```{r}
 single_species_plotter("DOSP")
 ```
+
 ```{r}
 single_species_plotter("DUNL")
 ```
@@ -471,6 +348,11 @@ single_species_plotter("COME")
 
 ```{r}
 single_species_plotter("DCCO")
+```
+
+
+```{r}
+single_species_plotter("b.DCCO")
 ```
 
 ```{r}
